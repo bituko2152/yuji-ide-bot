@@ -2,6 +2,7 @@ const { EmbedBuilder } = require('discord.js');
 const pollStore = require('./pollStore');
 const contractStore = require('./contractStore');
 const { generateButtons } = require('../commands/report');
+const { handleStarterButton } = require('./starterService');
 
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
 
@@ -111,6 +112,10 @@ async function handleButtonInteraction(interaction) {
     }
     if (interaction.customId.startsWith('contract_')) {
         await handleContractButton(interaction);
+        return true;
+    }
+    if (interaction.customId.startsWith('starter_')) {
+        await handleStarterButton(interaction);
         return true;
     }
     return false;

@@ -6,7 +6,6 @@ const {
     Collection,
     REST,
     Routes
-    // EmbedBuilder // only needed by lobbyService, currently disabled below
 } = require('discord.js');
 
 const fs = require('fs');
@@ -27,12 +26,17 @@ const {
     handleButtonInteraction
 } = require('./services/buttonHandler');
 
-// Steam lobby listing is disabled: it requires the real Steam desktop
-// client running (via steamworks.js), which isn't possible on Wispbyte's
-// container hosting. Re-enable if/when that service is hosted elsewhere.
-// const {
-//     startLobbyLoop
-// } = require('./services/lobbyService');
+const {
+    startLobbyLoop
+} = require('./services/lobbyService');
+
+const {
+    startWorkshopLoop
+} = require('./services/workshopService');
+
+const {
+    startNewsLoop
+} = require('./services/newsService');
 
 const {
     startContractLoop
@@ -41,6 +45,10 @@ const {
 const {
     startCleanupLoop
 } = require('./services/cleanupService');
+
+const {
+    startStarterLoop
+} = require('./services/starterService');
 
 const client = new Client({
     intents: [
@@ -116,18 +124,49 @@ client.once('ready', async () => {
         console.error(error);
     }
 
-    // Steam lobby listing disabled — see note near the top of this file.
-    // startLobbyLoop(client, EmbedBuilder);
+    // Live list of online lobbies (queries the game's master servers directly).
+    startLobbyLoop(client);
+
+    // Announces new Steam Workshop tracks (tracks only, no car classes).
+    startWorkshopLoop(client);
+
+    // Announces the developer's Steam news posts (patches, updates).
+    startNewsLoop(client);
 
     // Periodic check for accepted contracts pending role grant.
     startContractLoop(client);
 
     // Daily cleanup: removes polls/contracts older than 15 days from disk.
     startCleanupLoop();
+
+    // Weekly starters (open/close rounds) + auto-advance of the /report round.
+    startStarterLoop(client);
 });
 
 // Handle commands and buttons
 client.on('interactionCreate', async interaction => {
+
+    /*
+     * Handle autocomplete (e.g. the team list of /attend)
+     */
+    if (interaction.isAutocomplete()) {
+        const command = client.commands.get(
+            interaction.commandName
+        );
+
+        if (command && command.autocomplete) {
+            try {
+                await command.autocomplete(interaction);
+            } catch (error) {
+                console.error(
+                    '❌ Error handling autocomplete:',
+                    error
+                );
+            }
+        }
+
+        return;
+    }
 
     /*
      * Handle buttons

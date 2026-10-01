@@ -35,4 +35,10 @@ function allContracts() {
     return readAll();
 }
 
-module.exports = { createContract, getContract, updateContract, allContracts };
+function deleteContracts(ids) {
+    const all = readAll();
+    for (const id of ids) delete all[id];
+    writeAll(all);
+}
+
+module.exports = { createContract, getContract, updateContract, allContracts, deleteContracts };
