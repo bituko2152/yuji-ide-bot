@@ -44,4 +44,10 @@ function updatePoll(messageId, updater) {
     return all[messageId];
 }
 
-module.exports = { createPoll, getPoll, updatePoll, readAll };
+function deletePolls(messageIds) {
+    const all = readAll();
+    for (const id of messageIds) delete all[id];
+    writeAll(all);
+}
+
+module.exports = { createPoll, getPoll, updatePoll, readAll, deletePolls };

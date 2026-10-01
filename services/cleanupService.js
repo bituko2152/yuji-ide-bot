@@ -33,8 +33,13 @@ function cleanupOldData() {
 }
 
 function startCleanupLoop() {
-    cleanupOldData();
-    setInterval(cleanupOldData, CHECK_INTERVAL_MS);
+    // A cleanup problem must never take the whole bot down.
+    const run = () => {
+        try { cleanupOldData(); }
+        catch (err) { console.error('❌ [Cleanup]', err.message); }
+    };
+    run();
+    setInterval(run, CHECK_INTERVAL_MS);
 }
 
 module.exports = { startCleanupLoop };
