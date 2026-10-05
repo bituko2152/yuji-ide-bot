@@ -1,3 +1,7 @@
 node_modules/
 .env
+.env.*
 .vs/
+# Steam credentials must never be committed again
+data/steamAuth.json
+*.token
