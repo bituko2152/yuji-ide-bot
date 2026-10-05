@@ -39,6 +39,10 @@ const {
 } = require('./services/newsService');
 
 const {
+    startPresenceLoop
+} = require('./services/presenceService');
+
+const {
     startContractLoop
 } = require('./services/contractService');
 
@@ -49,6 +53,10 @@ const {
 const {
     startStarterLoop
 } = require('./services/starterService');
+
+const {
+    startResultsLoop
+} = require('./services/resultsWatcher');
 
 const client = new Client({
     intents: [
@@ -90,7 +98,7 @@ for (const file of commandFiles) {
 }
 
 // Event when the bot connects successfully
-client.once('ready', async () => {
+client.once('clientReady', async () => {
     console.log(
         `🤖 Bot connected as ${client.user.tag}`
     );
@@ -133,6 +141,9 @@ client.once('ready', async () => {
     // Announces the developer's Steam news posts (patches, updates).
     startNewsLoop(client);
 
+    // Bot status: how many people are playing UR2D2 right now (Steam).
+    startPresenceLoop(client);
+
     // Periodic check for accepted contracts pending role grant.
     startContractLoop(client);
 
@@ -141,6 +152,9 @@ client.once('ready', async () => {
 
     // Weekly starters (open/close rounds) + auto-advance of the /report round.
     startStarterLoop(client);
+
+    // Stops /results listeners once their lobby closes.
+    startResultsLoop(client);
 });
 
 // Handle commands and buttons

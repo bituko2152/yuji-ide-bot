@@ -16,8 +16,11 @@ const { EmbedBuilder } = require('discord.js');
  * "steam_community_announcements" feed, i.e. only what the developer posts
  * on that game's Steam page (no third-party press articles).
  *
+ * Store sales are announced too (they aren't news posts): see checkSale.
+ * Nothing here ever pings anyone.
+ *
  * First run of each game: remembers its current posts and announces nothing.
- * data/steamNews.json: { "<appid>": { seen: [gids, newest first] } }
+ * data/steamNews.json: { "<appid>": { seen: [gids, newest first], discount: <last %> } }
  */
 
 const CHECK_EVERY_MS = 10 * 60 * 1000;
@@ -118,6 +121,53 @@ function buildEmbed(game, item, fallbackImage) {
     return embed;
 }
 
+// ---------------------------------------------------------------- sales
+
+// price_overview of the store page, or null (free / unreleased / error).
+async function fetchPrice(appId, cc) {
+    const res = await fetch(`https://store.steampowered.com/api/appdetails?appids=${appId}&cc=${cc}&filters=price_overview`);
+    if (!res.ok) throw new Error(`appdetails(${appId}) returned ${res.status}`);
+    const json = await res.json();
+    return json[appId]?.data?.price_overview || null;
+}
+
+function buildSaleEmbed(game, usd, eur, image) {
+    const price = p => `~~${p.initial_formatted}~~ **${p.final_formatted}**`;
+    const embed = new EmbedBuilder()
+        .setColor('#4c6b22')
+        .setAuthor({ name: `${game.nombre} · Steam sale` })
+        .setTitle(`💸 ${game.nombre} is ${usd.discount_percent}% off!`)
+        .setURL(`https://store.steampowered.com/app/${game.appid}/`)
+        .setDescription([usd, eur].filter(Boolean).map(price).join(' · '))
+        .setTimestamp();
+    if (image) embed.setImage(image);
+    return embed;
+}
+
+// Steam sales aren't news posts, so the store price is checked too.
+// Announced when a discount starts (or its % changes); its end is silent.
+async function checkSale(client, game, store) {
+    if (!game.canal_id || game.canal_id === '???') return;
+
+    const usd = await fetchPrice(game.appid, 'us');
+    const discount = usd?.discount_percent || 0;
+    const known = store[game.appid] ||= { seen: [] };
+    const previous = known.discount || 0;
+    known.discount = discount;
+
+    if (!discount || discount === previous) return;
+
+    const channel = await client.channels.fetch(game.canal_id).catch(() => null);
+    if (!channel) return;
+
+    const eur = await fetchPrice(game.appid, 'es').catch(() => null);
+    await channel.send({
+        embeds: [buildSaleEmbed(game, usd, eur, await headerImage(game.appid))],
+        allowedMentions: { parse: [] }
+    });
+    console.log(`💸 [News] ${game.nombre}: announced ${discount}% sale`);
+}
+
 // ---------------------------------------------------------------- loop
 
 async function checkGame(client, game, store) {
@@ -144,7 +194,7 @@ async function checkGame(client, game, store) {
 
     const fallbackImage = await headerImage(game.appid);
     for (const item of fresh) {
-        await channel.send({ embeds: [buildEmbed(game, item, fallbackImage)] });
+        await channel.send({ embeds: [buildEmbed(game, item, fallbackImage)], allowedMentions: { parse: [] } });
         known.seen.unshift(item.gid);
         console.log(`📰 [News] ${game.nombre}: announced "${item.title}"`);
     }
@@ -157,6 +207,7 @@ async function checkNews(client) {
     for (const game of games) {
         // One game failing (Steam hiccup, missing channel...) doesn't block the others.
         await checkGame(client, game, store).catch(err => console.error(`❌ [News] ${game.nombre}:`, err.message));
+        await checkSale(client, game, store).catch(err => console.error(`❌ [News] ${game.nombre} (sale):`, err.message));
     }
     writeStore(store);
 }

@@ -6,7 +6,7 @@ const { EmbedBuilder, MessageFlags, escapeMarkdown } = require('discord.js');
 /*
  * Live list of Ultimate Racing 2D 2 online lobbies, the same message in every
  * channel of config "canales_lobbies" (can be in different servers),
- * refreshed every minute: edited in place while it's the last message,
+ * refreshed every few minutes: edited in place while it's the last message,
  * re-posted (silently, old copy deleted) once someone writes below it.
  *
  * The game has its own master servers (one per region) that answer a tiny
@@ -28,7 +28,7 @@ const MASTER_SERVERS = ['64.226.118.45', '138.197.70.132', '159.223.89.233'];
 const PORT = 6510;
 const LIST_REQUEST = Buffer.from('90\n1\n8\n\0', 'latin1');
 const RESPONSE_WAIT_MS = 2500;
-const UPDATE_EVERY_MS = 60 * 1000;
+const UPDATE_EVERY_MS = 3 * 60 * 1000; // free hosting caps CPU: don't poll every minute
 
 const storeFile = path.join(__dirname, '../data/lobbyMessage.json');
 
@@ -103,7 +103,10 @@ function queryServer(host) {
 
             socket.send(Buffer.from(`ack\n2\n${m[2]}\n\0`, 'latin1'), PORT, host);
             const lobby = parseLobby(m[1]);
-            if (lobby) lobbies.set(`${lobby.name}|${lobby.port}`, lobby); // resends are duplicates
+            if (lobby) {
+                lobby.host = host; // master server that relays this lobby's traffic
+                lobbies.set(`${lobby.name}|${lobby.port}`, lobby); // resends are duplicates
+            }
         });
 
         socket.send(LIST_REQUEST, PORT, host);
@@ -137,7 +140,7 @@ function buildEmbed({ lobbies, offline }) {
     if (description.length > 4000) description = description.slice(0, 3990) + '\n…';
 
     const players = lobbies.reduce((sum, l) => sum + l.players, 0);
-    const footer = `${lobbies.length} lobbies · ${players} players · updates every minute` +
+    const footer = `${lobbies.length} lobbies · ${players} players · updates every ${UPDATE_EVERY_MS / 60000} min` +
         (offline ? ` · ⚠️ ${offline} server(s) not responding` : '');
 
     return new EmbedBuilder()

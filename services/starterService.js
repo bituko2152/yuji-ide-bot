@@ -53,6 +53,9 @@ function targetLabel(target, config) {
     return target === 'independent' ? 'Independent' : (config.roles_equipos[target]?.nombre ?? '???');
 }
 
+const MEMBERS_FETCH_COOLDOWN_MS = 10 * 60 * 1000;
+const lastMembersFetch = new Map();
+
 async function getTeamOwners(guild, teamRoleId, cat, config) {
     const managerRoleId = config.roles_liga_manager?.[cat];
     if (!managerRoleId || managerRoleId === '???') return [];
@@ -63,8 +66,11 @@ async function getTeamOwners(guild, teamRoleId, cat, config) {
     };
 
     let owners = find();
-    if (!owners.length) {
-        // Member cache may be cold: fetch once and retry.
+    // Member cache may be cold: fetch once and retry. Fetching every member is
+    // expensive, so at most once per MEMBERS_FETCH_COOLDOWN_MS per server.
+    const last = lastMembersFetch.get(guild.id) || 0;
+    if (!owners.length && Date.now() - last >= MEMBERS_FETCH_COOLDOWN_MS) {
+        lastMembersFetch.set(guild.id, Date.now());
         await guild.members.fetch().catch(() => null);
         owners = find();
     }
