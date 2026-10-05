@@ -40,11 +40,10 @@ module.exports = {
         const trackKey = interaction.options.getString('track');
         const classKey = interaction.options.getString('class');
 
-        // Only usable in the channels set in config.json records.canales (if any).
-        const allowed = catalog.recordsChannels();
-        if (allowed.length && !allowed.includes(interaction.channelId)) {
-            const list = allowed.map(id => `<#${id}>`).join(', ');
-            return interaction.reply({ content: `❌ This command can only be used in ${list}.`, ephemeral: true });
+        // Only usable in the channel set in config.json records.canal_id (if any).
+        const allowedChannel = catalog.recordsChannel();
+        if (allowedChannel && interaction.channelId !== allowedChannel) {
+            return interaction.reply({ content: `❌ This command can only be used in <#${allowedChannel}>.`, ephemeral: true });
         }
 
         await interaction.deferReply();

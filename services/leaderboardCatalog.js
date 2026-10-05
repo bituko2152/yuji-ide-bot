@@ -96,14 +96,13 @@ function normalize(list) {
     return Object.fromEntries(Object.entries(list || {}).map(([id, name]) => [id, name || null]));
 }
 
-// records.canales (or the older records.canal_id): channel id(s) where
-// /record works, as one id or a list. Empty/"???" = anywhere.
-function recordsChannels() {
+// records.canal_id: the only channel where /record works (unset/"???" = anywhere).
+function recordsChannel() {
     try {
-        const r = JSON.parse(fs.readFileSync(path.join(__dirname, '../config.json'), 'utf-8')).records || {};
-        return [r.canales ?? [], r.canal_id ?? []].flat().filter(id => id && id !== '???');
+        const id = JSON.parse(fs.readFileSync(path.join(__dirname, '../config.json'), 'utf-8')).records?.canal_id;
+        return id && id !== '???' ? id : null;
     } catch {
-        return [];
+        return null;
     }
 }
 
@@ -174,4 +173,4 @@ function search(map, query, limit = 25) {
     return [...starts, ...contains].slice(0, limit);
 }
 
-module.exports = { recordsChannels, TRACKS, CLASSES, getTracks, getClasses, trackName, className, leaderboardName, search, isWorkshop };
+module.exports = { recordsChannel, TRACKS, CLASSES, getTracks, getClasses, trackName, className, leaderboardName, search, isWorkshop };

@@ -39,10 +39,6 @@ const {
 } = require('./services/newsService');
 
 const {
-    startPresenceLoop
-} = require('./services/presenceService');
-
-const {
     startContractLoop
 } = require('./services/contractService');
 
@@ -140,9 +136,6 @@ client.once('clientReady', async () => {
 
     // Announces the developer's Steam news posts (patches, updates).
     startNewsLoop(client);
-
-    // Bot status: how many people are playing UR2D2 right now (Steam).
-    startPresenceLoop(client);
 
     // Periodic check for accepted contracts pending role grant.
     startContractLoop(client);
