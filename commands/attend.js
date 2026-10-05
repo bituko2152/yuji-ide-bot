@@ -7,11 +7,10 @@ module.exports = {
     data: new SlashCommandBuilder()
         .setName('attend')
         .setDescription('Check in as a starter for the next race of this league')
-        // Optional: leagues without teams (e.g. AL, independents only) just use /attend.
         .addStringOption(opt => opt
             .setName('team')
-            .setDescription('Team to race for (or Independent). Not needed in leagues without teams')
-            .setRequired(false)
+            .setDescription('Team to race for (or Independent)')
+            .setRequired(true)
             .setAutocomplete(true)),
 
     // Choices depend on the channel the command is typed in: each league's
@@ -54,12 +53,7 @@ module.exports = {
             return interaction.editReply(`⚠️ There are no open starters for **${cat}** right now (break week or not opened yet).`);
         }
 
-        // A league with no teams is independents only: no need to pick anything.
-        const hasTeams = S.teamsOf(cat, config).length > 0;
-        const target = hasTeams ? interaction.options.getString('team') : 'independent';
-        if (!target) {
-            return interaction.editReply('❌ Pick your team (or Independent) in the `team` option.');
-        }
+        const target = interaction.options.getString('team');
         const isIndependent = target === 'independent';
         const team = isIndependent ? null : config.roles_equipos[target];
         if (!isIndependent && (!team || team.categoria !== cat)) {

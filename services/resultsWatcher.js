@@ -70,7 +70,7 @@ function buildCsv(rows, isRace) {
         lines = humans.map((r, i) => {
             const dnf = r.total >= NO_TIME;
             return [i + 1, r.name, r.grid, ms(r.quali), ms(r.total), dnf ? '' : ms(r.total - winner),
-            ms(r.best), !dnf && r.best === fastest, dnf];
+                ms(r.best), !dnf && r.best === fastest, dnf];
         });
     }
     return [header, ...lines].map(l => l.map(cell).join(',')).join('\n') + '\n';

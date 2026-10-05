@@ -39,10 +39,6 @@ const {
 } = require('./services/newsService');
 
 const {
-    startPresenceLoop
-} = require('./services/presenceService');
-
-const {
     startContractLoop
 } = require('./services/contractService');
 
@@ -57,12 +53,6 @@ const {
 const {
     startResultsLoop
 } = require('./services/resultsWatcher');
-
-const {
-    handleReportComponent,
-    isReportComponent,
-    migrateOldPolls
-} = require('./services/reportService');
 
 const client = new Client({
     intents: [
@@ -147,9 +137,6 @@ client.once('clientReady', async () => {
     // Announces the developer's Steam news posts (patches, updates).
     startNewsLoop(client);
 
-    // Bot status: how many people are playing UR2D2 right now (Steam).
-    startPresenceLoop(client);
-
     // Periodic check for accepted contracts pending role grant.
     startContractLoop(client);
 
@@ -161,9 +148,6 @@ client.once('clientReady', async () => {
 
     // Stops /results listeners once their lobby closes.
     startResultsLoop(client);
-
-    // Reports of the current rounds still on the old poll -> S26 penalty system.
-    migrateOldPolls(client).catch(err => console.error('❌ [Reports] Poll migration failed:', err.message));
 });
 
 // Handle commands and buttons
@@ -220,17 +204,6 @@ client.on('interactionCreate', async interaction => {
                 }).catch(() => { });
             }
         }
-
-        return;
-    }
-
-    /*
-     * Handle report dropdowns and forms (votes, "Submit result")
-     */
-    if ((interaction.isStringSelectMenu() || interaction.isModalSubmit()) && isReportComponent(interaction.customId)) {
-        await handleReportComponent(interaction).catch(error => {
-            console.error('❌ Error handling report interaction:', error);
-        });
 
         return;
     }

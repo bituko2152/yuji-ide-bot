@@ -1,7 +1,6 @@
 const fs = require('fs');
 const path = require('path');
 const { EmbedBuilder, escapeMarkdown } = require('discord.js');
-const { createCanvas, loadImage } = require('@napi-rs/canvas');
 const { fetchPersonaName } = require('./steamProfiles');
 
 /*
@@ -17,16 +16,14 @@ const { fetchPersonaName } = require('./steamProfiles');
  * Skipped (never announced):
  *  - titles containing any BLOCKED_WORDS as a whole word, any case
  *    ("AI" matches "AI Track" or "[ai]", not "Main");
- *  - likely copies of an existing track: exact same track file size, same
- *    normalized title by the same author (findOriginal), or practically the
- *    same preview image as a track of the same author / a recent upload
- *    (findSamePreview: re-uploads under another name).
+ *  - likely copies of an existing track: exact same track file size, or
+ *    same normalized title by the same author (see findOriginal).
  *
  * First run: walks every Workshop page to learn all existing tracks (used to
  * detect copies) and announces nothing, so the channel isn't flooded.
  *
  * data/workshopTracks.json:
- *   { seen: [ids, newest first], known: [ { id, key, size, creator, hash?, msg? (announcement message id) } ] }
+ *   { seen: [ids, newest first], known: [ { id, key, size, creator } ] }
  */
 
 const APP_ID = 1285230;
@@ -115,80 +112,12 @@ const knownEntry = item => ({
 //  - same normalized title re-uploaded by the SAME author ("Monza (copy)").
 // Same title by a different author is NOT a copy: real circuits (Imola,
 // Spa...) are legitimately recreated by many people.
-// (Re-uploads under a different title are caught by findSamePreview.)
 function findOriginal(item, known) {
     const key = titleKey(item.title);
     return known.find(k => k.id !== item.publishedfileid && (
         (item.file_size && k.size === item.file_size) ||
         (key && k.key === key && k.creator === item.creator)
     )) || null;
-}
-
-// ---------------------------------------------------------------- preview images
-
-// Difference hash of the preview image: 256 bits, nearly identical for the
-// same picture even after small edits or recompression. Real duplicates
-// measured 0 bits apart, different tracks 110+.
-const HASH_W = 17, HASH_H = 16;
-const SAME_PREVIEW_MAX_BITS = 20;
-const SURE_PREVIEW_MAX_BITS = 5;  // strict: only this close is safe enough to edit an announcement
-const RECENT_KNOWN = 30;        // besides same-author tracks, compare with the latest ones
-const MAX_NEW_HASHES = 10;      // per check: hashing images is memory-heavy on small hosts
-
-async function previewHash(url) {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`preview returned ${res.status}`);
-    const img = await loadImage(Buffer.from(await res.arrayBuffer()));
-    const canvas = createCanvas(HASH_W, HASH_H);
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(img, 0, 0, HASH_W, HASH_H);
-    const px = ctx.getImageData(0, 0, HASH_W, HASH_H).data;
-    const gray = (x, y) => { const i = (y * HASH_W + x) * 4; return px[i] * 0.299 + px[i + 1] * 0.587 + px[i + 2] * 0.114; };
-    let bits = '';
-    for (let y = 0; y < HASH_H; y++) for (let x = 0; x < HASH_W - 1; x++) bits += gray(x, y) < gray(x + 1, y) ? '1' : '0';
-    return bits;
-}
-
-const hashDistance = (a, b) => [...a].reduce((n, c, i) => n + (c !== b[i]), 0);
-
-// The known track (same author, or among the latest uploads) whose preview
-// image is practically the same as this one's: the same track re-uploaded
-// under another name ("New track" -> "De Weiden"). Missing hashes of those
-// candidates are computed now and kept in the store.
-async function findSamePreview(item, known) {
-    if (!item.preview_url) return null;
-    const hash = await previewHash(item.preview_url).catch(() => null);
-    if (!hash) return null;
-    item._hash = hash;
-
-    const candidates = known.filter((k, i) => k.id !== item.publishedfileid &&
-        (k.creator === item.creator || i >= known.length - RECENT_KNOWN));
-
-    // Newest first, and only a few per check; the rest get hashed on later checks.
-    const missing = candidates.filter(k => !k.hash).slice(-MAX_NEW_HASHES);
-    if (missing.length) {
-        const details = await fetchDetails(missing.map(k => k.id)).catch(() => []);
-        for (const d of details) {
-            const k = missing.find(m => m.id === d.publishedfileid);
-            if (k && d.preview_url) k.hash = await previewHash(d.preview_url).catch(() => null);
-        }
-    }
-
-    let best = null;
-    for (const k of candidates) {
-        if (!k.hash) continue;
-        const distance = hashDistance(k.hash, hash);
-        if (distance <= SAME_PREVIEW_MAX_BITS && (!best || distance < best.distance)) best = { entry: k, distance };
-    }
-    return best; // { entry, distance } or null
-}
-
-// Is `item` certainly the same track as the known `entry`, re-uploaded by
-// its own author? Only then may the old announcement be edited.
-function isSureReupload(item, entry, previewDistance) {
-    if (entry.creator !== item.creator) return false;
-    const sameTitle = titleKey(item.title) && titleKey(item.title) === entry.key;
-    return sameTitle || (previewDistance != null && previewDistance <= SURE_PREVIEW_MAX_BITS);
 }
 
 // ---------------------------------------------------------------- message
@@ -255,42 +184,16 @@ async function checkWorkshop(client) {
         .sort((a, b) => a.time_created - b.time_created);
 
     for (const item of items) {
-        const entry = { ...knownEntry(item) };
-
+        const original = findOriginal(item, store.known);
         if (hasBlockedWord(item)) {
             console.log(`🏁 [Workshop] Skipped (blocked word): ${item.title}`);
+        } else if (original) {
+            console.log(`🏁 [Workshop] Skipped (looks like a copy of ${original.id}): ${item.title}`);
         } else {
-            let original = findOriginal(item, store.known);
-            let distance = null;
-            if (!original) {
-                const same = await findSamePreview(item, store.known);
-                if (same) ({ entry: original, distance } = same);
-            }
-
-            if (!original) {
-                const sent = await channel.send({ embeds: [buildEmbed(item, await fetchPersonaName(item.creator))] });
-                entry.msg = sent.id; // remembered so a later re-upload can update it
-                console.log(`🏁 [Workshop] Announced track: ${item.title}`);
-            } else if (original.msg && isSureReupload(item, original, distance)) {
-                // Same author re-uploaded the same track (e.g. "New track" -> "De Weiden"):
-                // update the existing announcement to the new item instead of posting again.
-                const edited = await channel.messages.edit(original.msg, {
-                    embeds: [buildEmbed(item, await fetchPersonaName(item.creator))]
-                }).catch(() => null);
-                if (edited) {
-                    entry.msg = original.msg;
-                    delete original.msg;
-                    console.log(`🏁 [Workshop] Updated announcement of ${original.id} -> ${item.publishedfileid}: ${item.title}`);
-                } else {
-                    console.log(`🏁 [Workshop] Skipped (re-upload of ${original.id}, old announcement not editable): ${item.title}`);
-                }
-            } else {
-                console.log(`🏁 [Workshop] Skipped (looks like a copy of ${original.id}): ${item.title}`);
-            }
+            await channel.send({ embeds: [buildEmbed(item, await fetchPersonaName(item.creator))] });
+            console.log(`🏁 [Workshop] Announced track: ${item.title}`);
         }
-
-        if (item._hash) entry.hash = item._hash;
-        store.known.push(entry);
+        store.known.push(knownEntry(item));
     }
 
     // Non-public items stay out of "seen", so they're announced once made public.
@@ -314,4 +217,4 @@ function startWorkshopLoop(client) {
     console.log('🏁 [Workshop] Track announcements started.');
 }
 
-module.exports = { startWorkshopLoop, fetchTrackIdsPage, fetchDetails, buildEmbed, titleKey, hasBlockedWord, findOriginal, findSamePreview, knownEntry };
+module.exports = { startWorkshopLoop, fetchTrackIdsPage, fetchDetails, buildEmbed, titleKey, hasBlockedWord, findOriginal, knownEntry };

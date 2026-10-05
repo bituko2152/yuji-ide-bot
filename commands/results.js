@@ -80,6 +80,6 @@ module.exports = {
         }
         // Public, so everyone in the channel knows a capture is running.
         return interaction.reply(`👂 ${interaction.user} started listening to **${lobby.name}**. ` +
-            'The qualifying and race CSVs will be posted here; use /results stop after race ends.');
+            'The qualifying and race CSVs will be posted here; it stops on its own when the lobby closes.');
     }
 };
