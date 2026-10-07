@@ -20,7 +20,7 @@ const { EmbedBuilder } = require('discord.js');
  * Nothing here ever pings anyone.
  *
  * First run of each game: remembers its current posts and announces nothing.
- * data/steamNews.json: { "<appid>": { seen: [gids, newest first], discount: <last %> } }
+ * data/steamNews.json: { "<appid>": { seen: [gids, newest first], discount: <last %>, saleMsg?: <message id> } }
  */
 
 const CHECK_EVERY_MS = 10 * 60 * 1000;
@@ -145,26 +145,50 @@ function buildSaleEmbed(game, usd, eur, image) {
 }
 
 // Steam sales aren't news posts, so the store price is checked too.
-// Announced when a discount starts (or its % changes); its end is silent.
+// A discount is announced when it starts; if its % changes the message is
+// updated, and when it ends the message is deleted (known.saleMsg tracks it).
 async function checkSale(client, game, store) {
     if (!game.canal_id || game.canal_id === '???') return;
 
     const usd = await fetchPrice(game.appid, 'us');
-    const discount = usd?.discount_percent || 0;
+    // No price at all (unreleased, or Steam answered without data): don't treat
+    // it as "the sale ended", or a hiccup would delete the message.
+    if (!usd) return;
+
+    const discount = usd.discount_percent || 0;
     const known = store[game.appid] ||= { seen: [] };
     const previous = known.discount || 0;
     known.discount = discount;
-
-    if (!discount || discount === previous) return;
+    if (discount === previous) return;
 
     const channel = await client.channels.fetch(game.canal_id).catch(() => null);
     if (!channel) return;
 
+    // Sale over: remove its announcement.
+    if (!discount) {
+        if (known.saleMsg) {
+            await channel.messages.delete(known.saleMsg).catch(() => { });
+            delete known.saleMsg;
+            console.log(`💸 [News] ${game.nombre}: sale ended, announcement deleted`);
+        }
+        return;
+    }
+
     const eur = await fetchPrice(game.appid, 'es').catch(() => null);
-    await channel.send({
+    const payload = {
         embeds: [buildSaleEmbed(game, usd, eur, await headerImage(game.appid))],
         allowedMentions: { parse: [] }
-    });
+    };
+
+    // Different % during the same sale: update the existing message.
+    const edited = known.saleMsg && await channel.messages.edit(known.saleMsg, payload).catch(() => null);
+    if (edited) {
+        console.log(`💸 [News] ${game.nombre}: sale updated to ${discount}%`);
+        return;
+    }
+
+    const sent = await channel.send(payload);
+    known.saleMsg = sent.id;
     console.log(`💸 [News] ${game.nombre}: announced ${discount}% sale`);
 }
 

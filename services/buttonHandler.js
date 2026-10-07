@@ -1,57 +1,9 @@
 const { EmbedBuilder } = require('discord.js');
-const pollStore = require('./pollStore');
 const contractStore = require('./contractStore');
-const { generateButtons } = require('../commands/report');
+const { handleReportComponent, isReportComponent } = require('./reportService');
 const { handleStarterButton } = require('./starterService');
 
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
-
-async function handlePollVote(interaction) {
-    const choice = interaction.customId.split('_')[1]; // A..G or 'view'
-    const messageId = interaction.message.id;
-    const poll = pollStore.getPoll(messageId);
-
-    if (!poll) {
-        return interaction.reply({ content: "⚠️ Couldn't find this poll's state (it may be too old).", ephemeral: true });
-    }
-
-    if (choice === 'view') {
-        const baseLines = Object.entries(poll.baseVotes).map(([uid, c]) => `<@${uid}> → **${c}**`);
-        const levelLines = Object.entries(poll.levelVotes).map(([uid, c]) => `<@${uid}> → **${c}**`);
-        const embed = new EmbedBuilder()
-            .setColor('#5865F2')
-            .setTitle('👁️ Voters for this poll')
-            .addFields(
-                { name: 'Base verdict', value: baseLines.length ? baseLines.join('\n') : 'No votes yet.' },
-                { name: 'Severity level', value: levelLines.length ? levelLines.join('\n') : 'No votes yet.' }
-            );
-        // Visible to everyone in the thread, not ephemeral, as requested.
-        const thread = poll.threadId ? await interaction.guild.channels.fetch(poll.threadId).catch(() => null) : null;
-        if (thread) {
-            await thread.send({ embeds: [embed] });
-            return interaction.reply({ content: '✅ Voter list posted in the thread.', ephemeral: true });
-        }
-        return interaction.reply({ embeds: [embed], ephemeral: true });
-    }
-
-    const userId = interaction.user.id;
-    const isBaseVote = ['A', 'B'].includes(choice);
-    const voteMap = isBaseVote ? 'baseVotes' : 'levelVotes';
-
-    const updated = pollStore.updatePoll(messageId, (p) => {
-        const previous = p[voteMap][userId];
-        if (previous === choice) {
-            p.votes[choice]--;
-            delete p[voteMap][userId];
-        } else {
-            if (previous) p.votes[previous]--;
-            p.votes[choice]++;
-            p[voteMap][userId] = choice;
-        }
-    });
-
-    await interaction.update({ components: generateButtons(updated.votes) });
-}
 
 async function handleContractButton(interaction) {
     const [, action, contractId] = interaction.customId.split('_'); // contract_accept_<id> / contract_decline_<id>
@@ -106,8 +58,8 @@ async function handleContractButton(interaction) {
 async function handleButtonInteraction(interaction) {
     if (!interaction.isButton()) return false;
 
-    if (interaction.customId.startsWith('vote_')) {
-        await handlePollVote(interaction);
+    if (isReportComponent(interaction.customId)) {
+        await handleReportComponent(interaction);
         return true;
     }
     if (interaction.customId.startsWith('contract_')) {
