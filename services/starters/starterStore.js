@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const storeFile = path.join(__dirname, '../data/starters.json');
+const storeFile = path.join(__dirname, '../../data/starters.json');
 
 /*
  * Shape of data/starters.json — ONE entry per category, overwritten every

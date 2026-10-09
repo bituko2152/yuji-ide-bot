@@ -24,35 +24,50 @@ app.listen(3000, () => {
 
 const {
     handleButtonInteraction
-} = require('./services/buttonHandler');
+} = require('./services/core/buttonHandler');
 
 const {
     startLobbyLoop
-} = require('./services/lobbyService');
+} = require('./services/steam/lobbyService');
 
 const {
     startWorkshopLoop
-} = require('./services/workshopService');
+} = require('./services/steam/workshopService');
 
 const {
     startNewsLoop
-} = require('./services/newsService');
+} = require('./services/steam/newsService');
+
+const {
+    startPresenceLoop
+} = require('./services/core/presenceService');
 
 const {
     startContractLoop
-} = require('./services/contractService');
+} = require('./services/contracts/contractService');
 
 const {
     startCleanupLoop
-} = require('./services/cleanupService');
+} = require('./services/core/cleanupService');
 
 const {
     startStarterLoop
-} = require('./services/starterService');
+} = require('./services/starters/starterService');
 
 const {
     startResultsLoop
-} = require('./services/resultsWatcher');
+} = require('./services/results/resultsWatcher');
+
+const {
+    handleReportComponent,
+    isReportComponent,
+    migrateOldPolls
+} = require('./services/reports/reportService');
+
+const {
+    handleUploadComponent,
+    isUploadComponent
+} = require('./services/results/resultsUpload');
 
 const client = new Client({
     intents: [
@@ -137,6 +152,9 @@ client.once('clientReady', async () => {
     // Announces the developer's Steam news posts (patches, updates).
     startNewsLoop(client);
 
+    // Bot status: how many people are playing UR2D2 right now (Steam).
+    startPresenceLoop(client);
+
     // Periodic check for accepted contracts pending role grant.
     startContractLoop(client);
 
@@ -148,6 +166,9 @@ client.once('clientReady', async () => {
 
     // Stops /results listeners once their lobby closes.
     startResultsLoop(client);
+
+    // Reports of the current rounds still on the old poll -> S26 penalty system.
+    migrateOldPolls(client).catch(err => console.error('❌ [Reports] Poll migration failed:', err.message));
 });
 
 // Handle commands and buttons
@@ -204,6 +225,28 @@ client.on('interactionCreate', async interaction => {
                 }).catch(() => { });
             }
         }
+
+        return;
+    }
+
+    /*
+     * Handle report dropdowns and forms (votes, "Submit result")
+     */
+    if ((interaction.isStringSelectMenu() || interaction.isModalSubmit()) && isReportComponent(interaction.customId)) {
+        await handleReportComponent(interaction).catch(error => {
+            console.error('❌ Error handling report interaction:', error);
+        });
+
+        return;
+    }
+
+    /*
+     * Handle /results upload preview dropdowns (who is each unknown driver)
+     */
+    if (interaction.isStringSelectMenu() && isUploadComponent(interaction.customId)) {
+        await handleUploadComponent(interaction).catch(error => {
+            console.error('❌ Error handling results upload interaction:', error);
+        });
 
         return;
     }

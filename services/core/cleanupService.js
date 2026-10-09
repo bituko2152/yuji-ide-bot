@@ -1,5 +1,5 @@
-const pollStore = require('./pollStore');
-const contractStore = require('./contractStore');
+const pollStore = require('../reports/pollStore');
+const contractStore = require('../contracts/contractStore');
 
 const FIFTEEN_DAYS_MS = 15 * 24 * 60 * 60 * 1000;
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000; // run once a day is plenty

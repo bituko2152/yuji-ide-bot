@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const dgram = require('dgram');
 const { AttachmentBuilder } = require('discord.js');
-const { fetchLobbies } = require('./lobbyService');
+const { fetchLobbies } = require('../steam/lobbyService');
 
 /*
  * League results: /results listen follows an online lobby and posts each
@@ -30,7 +30,7 @@ const NO_TIME = 1e6;                // the game's "no time" values are >= 1,000,
 const SESSIONS = { 2: 'qualifying', 3: 'race' };
 
 function loadConfig() {
-    return JSON.parse(fs.readFileSync(path.join(__dirname, '../config.json'), 'utf-8'));
+    return JSON.parse(fs.readFileSync(path.join(__dirname, '../../config.json'), 'utf-8'));
 }
 
 
@@ -65,12 +65,13 @@ function buildCsv(rows, isRace) {
     } else {
         const finishers = humans.filter(r => r.total < NO_TIME);
         const winner = finishers[0]?.total;
-        const fastest = Math.min(...finishers.map(r => r.best));
+        // Fastest lap among ALL drivers: a DNF can hold it too (league rule).
+        const fastest = Math.min(...humans.filter(r => r.best < NO_TIME).map(r => r.best));
         header = ['position', 'driver', 'grid', 'quali_time_ms', 'race_time_ms', 'gap_ms', 'best_lap_ms', 'fastest_lap', 'dnf'];
         lines = humans.map((r, i) => {
             const dnf = r.total >= NO_TIME;
             return [i + 1, r.name, r.grid, ms(r.quali), ms(r.total), dnf ? '' : ms(r.total - winner),
-                ms(r.best), !dnf && r.best === fastest, dnf];
+            ms(r.best), r.best === fastest, dnf];
         });
     }
     return [header, ...lines].map(l => l.map(cell).join(',')).join('\n') + '\n';

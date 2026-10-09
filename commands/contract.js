@@ -2,7 +2,7 @@ const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, Butt
 const fs = require('fs');
 const path = require('path');
 const { randomUUID } = require('crypto');
-const contractStore = require('../services/contractStore');
+const contractStore = require('../services/contracts/contractStore');
 
 function loadConfig() {
     return JSON.parse(fs.readFileSync(path.join(__dirname, '../config.json'), 'utf-8'));
