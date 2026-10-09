@@ -30,10 +30,10 @@ const LIST_REQUEST = Buffer.from('90\n1\n8\n\0', 'latin1');
 const RESPONSE_WAIT_MS = 2500;
 const UPDATE_EVERY_MS = 3 * 60 * 1000; // free hosting caps CPU: don't poll every minute
 
-const storeFile = path.join(__dirname, '../data/lobbyMessage.json');
+const storeFile = path.join(__dirname, '../../data/lobbyMessage.json');
 
 function loadConfig() {
-    return JSON.parse(fs.readFileSync(path.join(__dirname, '../config.json'), 'utf-8'));
+    return JSON.parse(fs.readFileSync(path.join(__dirname, '../../config.json'), 'utf-8'));
 }
 
 // data/lobbyMessage.json: { "<channelId>": "<messageId>" }

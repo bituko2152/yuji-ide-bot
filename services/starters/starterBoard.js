@@ -4,7 +4,7 @@ const { createCanvas, GlobalFonts } = require('@napi-rs/canvas');
 
 // Drop any .ttf/.otf in assets/fonts/ and it gets registered. Without a
 // font, containers with no system fonts would render blank text.
-const FONT_DIR = path.join(__dirname, '../assets/fonts');
+const FONT_DIR = path.join(__dirname, '../../assets/fonts');
 const FONT = 'StartersFont, sans-serif';
 let fontsLoaded = false;
 

@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const storeFile = path.join(__dirname, '../data/contracts.json');
+const storeFile = path.join(__dirname, '../../data/contracts.json');
 
 function readAll() {
     try { return JSON.parse(fs.readFileSync(storeFile, 'utf-8')); }

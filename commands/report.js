@@ -1,29 +1,9 @@
-const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { SlashCommandBuilder } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
-const pollStore = require('../services/pollStore');
-
-function generateButtons(votes) {
-    const row1 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('vote_A').setLabel(`A (${votes.A})`).setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId('vote_B').setLabel(`B (${votes.B})`).setStyle(ButtonStyle.Primary)
-    );
-    const row2 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('vote_C').setLabel(`C (${votes.C})`).setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('vote_D').setLabel(`D (${votes.D})`).setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('vote_E').setLabel(`E (${votes.E})`).setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('vote_F').setLabel(`F (${votes.F})`).setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('vote_G').setLabel(`G (${votes.G})`).setStyle(ButtonStyle.Secondary)
-    );
-    const row3 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('vote_view').setLabel('👁️ View voters').setStyle(ButtonStyle.Secondary)
-    );
-    return [row1, row2, row3];
-}
+const { render, createPoll } = require('../services/reports/reportService');
 
 module.exports = {
-    generateButtons, // exported for reuse from the global handler in index.js
-
     data: new SlashCommandBuilder()
         .setName('report')
         .setDescription('Report an incident on the track')
@@ -71,37 +51,19 @@ module.exports = {
 
         const reportId = Math.floor(1000 + Math.random() * 9000);
 
-        const reportEmbed = new EmbedBuilder()
-            .setColor('#2b2d31')
-            .setTitle('Incident Report')
-            .setThumbnail(culprit.displayAvatarURL({ dynamic: true }))
-            .addFields(
-                { name: 'ID:', value: `\`${reportId}\`` },
-                { name: 'Culprit:', value: `${culprit} (${culprit.tag})` },
-                { name: 'Round:', value: `\`${currentRound || 'N/A'}\`` },
-                { name: 'Description:', value: `> ${description}` },
-                { name: 'Proof:', value: `[Click here](${evidence})` },
-                { name: 'Notes:', value: `> Submitted by ${interaction.user.username}` }
-            )
-            .setFooter({ text: `Created by ${interaction.user.username}` })
-            .setTimestamp();
-
-        const pollEmbed = new EmbedBuilder()
-            .setColor('#5865F2')
-            .setTitle('📊 Stewards Verdict Poll')
-            .setDescription(
-                `**Base Verdict:**\n🇦 No Penalty\n🇧 Penalty\n\n` +
-                `**Severity Level (If Penalty):**\n🇨 LvL 1\n🇩 LvL 2\n🇪 LvL 3\n🇫 LvL 4\n🇬 LvL 5\n\n` +
-                `_Click "View voters" to see who voted what._`
-            );
-
-        const votes = { A: 0, B: 0, C: 0, D: 0, E: 0, F: 0, G: 0 };
+        const report = {
+            culpritId: culprit.id,
+            round: currentRound || 'N/A',
+            description,
+            proof: evidence,
+            reporterId: interaction.user.id,
+            avatarUrl: culprit.displayAvatarURL()
+        };
 
         const sentMessage = await reportsChannel.send({
             content: config.rol_stewards_id ? `<@&${config.rol_stewards_id}>` : undefined,
-            embeds: [reportEmbed, pollEmbed],
-            components: generateButtons(votes),
-            allowedMentions: config.rol_stewards_id ? { roles: [config.rol_stewards_id] } : undefined
+            ...render({ reportId, report, voters: {}, createdAt: Date.now() }),
+            allowedMentions: config.rol_stewards_id ? { roles: [config.rol_stewards_id] } : { parse: [] }
         });
 
         const thread = await sentMessage.startThread({
@@ -111,11 +73,8 @@ module.exports = {
         });
 
         // We persist the state to disk (instead of an in-memory collector)
-        // so the buttons keep working even if the bot restarts.
-        pollStore.createPoll(sentMessage.id, {
-            reportId,
-            threadId: thread.id
-        });
+        // so the votes keep working even if the bot restarts.
+        createPoll(sentMessage.id, { reportId, threadId: thread.id, report });
 
         return interaction.editReply({ content: `✅ Incident report \`#${reportId}\` has been successfully dispatched to the stewards channel.` });
     }

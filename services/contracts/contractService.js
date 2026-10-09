@@ -6,7 +6,7 @@ const contractStore = require('./contractStore');
 const CHECK_INTERVAL_MS = 5 * 60 * 1000; // 5 min is plenty of resolution for a 24h window
 
 function loadConfig() {
-    return JSON.parse(fs.readFileSync(path.join(__dirname, '../config.json'), 'utf-8'));
+    return JSON.parse(fs.readFileSync(path.join(__dirname, '../../config.json'), 'utf-8'));
 }
 
 async function grantContract(client, contract) {

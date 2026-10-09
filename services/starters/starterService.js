@@ -10,7 +10,7 @@ const TEAM_SLOTS = 2;
 const BOARD_DEBOUNCE_MS = 1500;
 
 function loadConfig() {
-    return JSON.parse(fs.readFileSync(path.join(__dirname, '../config.json'), 'utf-8'));
+    return JSON.parse(fs.readFileSync(path.join(__dirname, '../../config.json'), 'utf-8'));
 }
 
 // ---------------------------------------------------------------- helpers
@@ -321,7 +321,7 @@ async function closeRound(client, cat) {
 
 // ---------------------------------------------------------------- reports
 
-const CONFIG_PATH = path.join(__dirname, '../config.json');
+const CONFIG_PATH = path.join(__dirname, '../../config.json');
 
 /**
  * Every Monday 00:00 UTC that follows a race week, the race that was just
