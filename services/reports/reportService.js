@@ -120,7 +120,9 @@ function typeMenu(customId, selected, levelId) {
 
 function reportComponents(poll) {
     const voters = new ButtonBuilder().setCustomId('report_voters').setLabel('👁️ View voters').setStyle(ButtonStyle.Secondary);
-    if (poll.submitted) return [new ActionRowBuilder().addComponents(voters)];
+    // After the result: stewards can still correct it (posted as a reply to it).
+    if (poll.submitted) return [new ActionRowBuilder().addComponents(voters,
+        new ButtonBuilder().setCustomId('report_submit').setLabel('✏️ Rectify result').setStyle(ButtonStyle.Secondary))];
 
     const level = levelMenu('report_vote_level', null);
     level.addOptions({ label: 'Remove my vote', value: 'remove', emoji: '🗑️' });
@@ -216,12 +218,44 @@ function mostVoted(poll) {
     return { level: levelId, type: typeId, amount: null };
 }
 
+// Level/type/amount of a result saved before they were stored (only its texts).
+function draftFromResult(sub) {
+    for (const l of LEVELS) {
+        if (l.label !== sub.offense) continue;
+        if (!needsType(l)) return { level: l.id, type: null, amount: null };
+        const t = TYPES.find(t => validType(l, t.id) && type(t.id).kind === sub.kind);
+        if (!t) return { level: l.id, type: 'time', amount: null };
+        const standard = decision(l.id, t.id, null).penalty;
+        return { level: l.id, type: t.id, amount: sub.penalty && sub.penalty !== standard ? sub.penalty : null };
+    }
+    return null;
+}
+
+// The results-channel message of an older result (no id saved): the bot's
+// latest message there about this report (same proof and culprit).
+async function findResultMessage(channel, poll) {
+    const r = poll.report;
+    let before;
+    for (let page = 0; page < 10; page++) {
+        const batch = await channel.messages.fetch({ limit: 100, ...(before ? { before } : {}) }).catch(() => null);
+        if (!batch?.size) return null;
+        const hit = batch.find(m => m.author.id === channel.client.user.id && m.embeds.some(e => {
+            const d = e.description || '';
+            return d.includes(`<@${r.culpritId}>`) && (!r.proof || d.includes(r.proof));
+        }));
+        if (hit) return hit;
+        before = batch.last().id;
+    }
+    return null;
+}
+
 function submitView(messageId, poll, draft) {
     const d = decision(draft.level, draft.type, draft.amount);
     const r = poll.report;
     const channelId = loadConfig().canal_resultados_reports_id;
     const content =
-        `**Submit result · Report #${poll.reportId}** → posted in <#${channelId}>\n` +
+        `**${poll.submitted ? 'Rectify' : 'Submit'} result · Report #${poll.reportId}** → posted in <#${channelId}>` +
+        (poll.submitted ? ' as a reply to the previous result\n' : '\n') +
         `>>> Report: <@${r.culpritId}> | ${roundLabel(r.round).replace(' ', ' | ')}\n` +
         `Result: ${d.offense} | ${d.kind}\nPenalty: ${d.penalty}\nProof: ${r.proof}`;
 
@@ -249,9 +283,10 @@ async function handleSubmitButton(interaction) {
     const messageId = interaction.message.id;
     const poll = pollStore.getPoll(messageId);
     if (!poll?.voters) return interaction.reply({ content: '⚠️ This report is closed or too old.', ephemeral: true });
-    if (poll.submitted) return interaction.reply({ content: '⚠️ The result was already submitted.', ephemeral: true });
-
-    const draft = mostVoted(poll);
+    // Rectifying starts from the result posted before.
+    const s = poll.submitted;
+    const draft = s?.level ? { level: s.level, type: s.type ?? null, amount: s.amount ?? null }
+        : s ? draftFromResult(s) || mostVoted(poll) : mostVoted(poll);
     pollStore.updatePoll(messageId, p => { p.draft = draft; });
     return interaction.reply({ ...submitView(messageId, poll, draft), ephemeral: true });
 }
@@ -267,7 +302,7 @@ async function handleSubmitSelect(interaction) {
         if (!needsType(l)) p.draft.type = null;
         else if (!validType(l, p.draft.type)) p.draft.type = 'time';
     });
-    if (!updated?.draft || updated.submitted) return interaction.update({ content: '⚠️ Already submitted or expired.', components: [] });
+    if (!updated?.draft) return interaction.update({ content: '⚠️ Already submitted or expired.', components: [] });
     return interaction.update(submitView(messageId, updated, updated.draft));
 }
 
@@ -287,7 +322,7 @@ async function handleAmountModal(interaction) {
     const updated = pollStore.updatePoll(messageId, p => {
         if (p.draft) p.draft.amount = interaction.fields.getTextInputValue('amount').trim();
     });
-    if (!updated?.draft || updated.submitted) return interaction.update({ content: '⚠️ Already submitted or expired.', components: [] });
+    if (!updated?.draft) return interaction.update({ content: '⚠️ Already submitted or expired.', components: [] });
     return interaction.update(submitView(messageId, updated, updated.draft));
 }
 
@@ -299,7 +334,7 @@ async function handleConfirmButton(interaction) {
     if (!isSteward(interaction.member, config)) return interaction.update({ content: '❌ Only stewards can submit the result.', components: [] });
 
     const poll = pollStore.getPoll(messageId);
-    if (!poll?.draft || poll.submitted) return interaction.update({ content: '⚠️ Already submitted or expired.', components: [] });
+    if (!poll?.draft) return interaction.update({ content: '⚠️ Already submitted or expired.', components: [] });
 
     const reportsChannel = await interaction.client.channels.fetch(config.canal_reportes_id).catch(() => null);
     const message = await reportsChannel?.messages.fetch(messageId).catch(() => null);
@@ -313,20 +348,29 @@ async function handleConfirmButton(interaction) {
     const d = decision(poll.draft.level, poll.draft.type, poll.draft.amount);
     // Embed (box with a coloured side line, by severity) so each result
     // stands apart in the channel. Mentions inside embeds don't notify.
-    await target.send({
+    // A rectification replies to the result it corrects (if still there).
+    const previous = !poll.submitted ? null : poll.submitted.resultMessageId
+        ? await target.messages.fetch(poll.submitted.resultMessageId).catch(() => null)
+        : await findResultMessage(target, poll);
+    const rectifying = Boolean(poll.submitted);
+    const sent = await target.send({
+        ...(previous ? { reply: { messageReference: previous.id, failIfNotExists: false } } : {}),
+        allowedMentions: { parse: [], repliedUser: false },
         embeds: [new EmbedBuilder()
             .setColor(RESULT_COLORS[poll.draft.level] || '#2b2d31')
-            .setDescription(
+            .setDescription((rectifying ? `**✏️ Rectification · Report #${poll.reportId}**\n` : '') +
                 `**Report:** <@${r.culpritId}> | ${roundLabel(r.round).replace(' ', ' | ')}\n` +
                 `**Result:** ${d.offense} | ${d.kind}\n**Penalty:** ${d.penalty}\n**Proof:** ${r.proof}`)]
     });
 
     const updated = pollStore.updatePoll(messageId, p => {
-        p.submitted = { by: interaction.user.id, at: Date.now(), ...d };
+        p.submitted = { by: interaction.user.id, at: Date.now(), ...d,
+            level: p.draft.level, type: p.draft.type, amount: p.draft.amount, resultMessageId: sent.id,
+            ...(rectifying ? { rectified: (p.submitted?.rectified || 0) + 1 } : {}) };
         delete p.draft;
     });
     await message.edit({ ...render(updated), allowedMentions: { parse: [] } });
-    return interaction.update({ content: '✅ Result submitted.', components: [] });
+    return interaction.update({ content: rectifying ? '✅ Rectification posted.' : '✅ Result submitted.', components: [] });
 }
 
 // ---------------------------------------------------------------- migration
@@ -436,13 +480,23 @@ async function recoverLostPolls(client) {
     // Same window as the daily cleanup (which drops polls older than 15 days
     // but leaves their messages): older reports stay closed.
     const since = Date.now() - RECOVER_DAYS * 24 * 60 * 60 * 1000;
-    let before, recovered = 0;
+    let before, recovered = 0, refreshed = 0;
     for (let page = 0; page < 10; page++) {
         const batch = await channel.messages.fetch({ limit: 100, before }).catch(() => null);
         if (!batch?.size) break;
         for (const message of batch.values()) {
             if (message.createdTimestamp < since) continue;
-            if (message.author.id !== client.user.id || known[message.id]) continue;
+            if (message.author.id !== client.user.id) continue;
+            if (known[message.id]) {
+                // Results posted before "Rectify result" existed: add the button.
+                const poll = known[message.id];
+                const hasRectify = message.components.some(row => row.components?.some(c => c.customId === 'report_submit'));
+                if (poll.submitted && poll.report && !hasRectify) {
+                    await message.edit({ ...render(poll), allowedMentions: { parse: [] } }).catch(() => {});
+                    refreshed++;
+                }
+                continue;
+            }
             const parsed = parseReportMessage(message);
             if (!parsed) continue;
             pollStore.createPoll(message.id, {
@@ -457,6 +511,7 @@ async function recoverLostPolls(client) {
         if (batch.last().createdTimestamp < since) break; // the rest is older
     }
     if (recovered) console.log(`🔁 [Reports] Recovered ${recovered} report poll(s) from the reports channel.`);
+    if (refreshed) console.log(`🔁 [Reports] Added the rectify button to ${refreshed} submitted report(s).`);
 }
 
 // ---------------------------------------------------------------- routing
