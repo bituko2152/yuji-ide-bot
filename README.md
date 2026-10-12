@@ -31,7 +31,9 @@ services/
   contracts/        Driver contracts
   starters/         Weekly starters board (/attend), race-day close times
   results/          /results listen (live lobby watcher) and /results upload (CSV -> Supabase)
-  steam/            UR2D2 lobby list, Steam news + sales, Workshop tracks, leaderboards (/record), profiles
+  replay/           Race replay posted with the race CSV: recorder -> builder -> assets (Steam) -> render
+                    (the page is assets/replay/template.html — edit it there; track/car cache in data/replay-cache)
+  steam/            UR2D2 lobby list, Steam news + sales, leaderboards (/record), profiles
 scripts/            One-off tools (steamLogin.js)
 assets/fonts/       Fonts for the generated images
 data/               Runtime state written by the bot (not in git)
@@ -45,7 +47,6 @@ data/               Runtime state written by the bot (not in git)
 | Add a button / select menu | `services/core/buttonHandler.js` |
 | Change who can use a command | `config.json` |
 | Lobby list message | `services/steam/lobbyService.js` |
-| Workshop announcements / copy detection | `services/steam/workshopService.js` |
 | Steam news and sales | `services/steam/newsService.js` |
 | Results upload preview / saving | `services/results/resultsUpload.js` |
 | Starters board image | `services/starters/starterBoard.js` |

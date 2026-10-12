@@ -21,8 +21,8 @@ function categoryFromChannel(channelId, config) {
 }
 
 function teamsOf(cat, config) {
-    return Object.entries(config.roles_equipos || {})
-        .filter(([, t]) => t.categoria === cat)
+    return Object.entries(config.team_roles || {})
+        .filter(([, t]) => t.league === cat)
         .map(([roleId, t]) => ({ roleId, ...t }));
 }
 
@@ -36,7 +36,7 @@ function isOpen(round) {
 
 // TO of a team = league manager role + that team's role, at the same time.
 function isTO(member, teamRoleId, cat, config) {
-    const managerRoleId = config.roles_liga_manager?.[cat];
+    const managerRoleId = config.league_manager_roles?.[cat];
     if (!managerRoleId || managerRoleId === '???') return false;
     return member.roles.cache.has(managerRoleId) && member.roles.cache.has(teamRoleId);
 }
@@ -50,14 +50,14 @@ function canManage(member, config) {
 }
 
 function targetLabel(target, config) {
-    return target === 'independent' ? 'Independent' : (config.roles_equipos[target]?.nombre ?? '???');
+    return target === 'independent' ? 'Independent' : (config.team_roles[target]?.name ?? '???');
 }
 
 const MEMBERS_FETCH_COOLDOWN_MS = 10 * 60 * 1000;
 const lastMembersFetch = new Map();
 
 async function getTeamOwners(guild, teamRoleId, cat, config) {
-    const managerRoleId = config.roles_liga_manager?.[cat];
+    const managerRoleId = config.league_manager_roles?.[cat];
     if (!managerRoleId || managerRoleId === '???') return [];
 
     const find = () => {
@@ -125,7 +125,7 @@ function removeUser(cat, userId) {
 // ---------------------------------------------------------------- board message
 
 function leagueRoleMention(cat, config) {
-    const id = config.roles_liga_jugador?.[cat];
+    const id = config.league_driver_roles?.[cat];
     return id && id !== '???' ? `<@&${id}>` : '';
 }
 
@@ -288,7 +288,7 @@ async function openRound(client, cat, win, config) {
     };
 
     // Send first, persist after: if sending fails, the next tick retries.
-    const roleId = config.roles_liga_jugador?.[cat];
+    const roleId = config.league_driver_roles?.[cat];
     const hasRole = roleId && roleId !== '???';
     const message = await channel.send({
         content: buildContent(round, false, leagueRoleMention(cat, config)),
@@ -329,6 +329,26 @@ const CONFIG_PATH = path.join(__dirname, '../../config.json');
  * reports are switched on, and ONE generic announcement is posted for all
  * leagues. Idempotent: it only fires once per week (tracked in _meta).
  */
+// config_categorias.<cat> = { activo: true, round } written into the config.json
+// text in place; the whole file is only rewritten if that entry can't be found.
+function setRoundInText(text, cat, roundName) {
+    const start = text.indexOf('"config_categorias"');
+    const end = start < 0 ? -1 : text.indexOf('\n  }', start);
+    const entry = new RegExp(`("${cat}"\\s*:\\s*\\{)([^}]*)(\\})`);
+    if (start >= 0 && end > start && entry.test(text.slice(start, end))) {
+        const block = text.slice(start, end).replace(entry, (m, open, body, close) => {
+            body = body.replace(/("round"\s*:\s*")[^"]*(")/, `$1${roundName}$2`).replace(/("activo"\s*:\s*)(true|false)/, '$1true');
+            return open + body + close;
+        });
+        const out = text.slice(0, start) + block + text.slice(end);
+        const parsed = JSON.parse(out).config_categorias?.[cat];
+        if (parsed?.round === roundName && parsed.activo === true) return out;
+    }
+    const fresh = JSON.parse(text);
+    fresh.config_categorias[cat] = { ...(fresh.config_categorias[cat] || {}), activo: true, round: roundName };
+    return JSON.stringify(fresh, null, 2);
+}
+
 async function syncReports(client, config) {
     const now = Date.now();
     const weekStart = mondayUtc(new Date(now));
@@ -344,11 +364,10 @@ async function syncReports(client, config) {
 
     if (Object.keys(justRaced).length) {
         // Re-read from disk right before writing so we don't clobber a /setround.
-        const fresh = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
-        for (const [cat, roundName] of Object.entries(justRaced)) {
-            fresh.config_categorias[cat] = { ...(fresh.config_categorias[cat] || {}), activo: true, round: roundName };
-        }
-        fs.writeFileSync(CONFIG_PATH, JSON.stringify(fresh, null, 2));
+        // Only the round values change in the text, so the file keeps its hand-made layout.
+        let text = fs.readFileSync(CONFIG_PATH, 'utf-8');
+        for (const [cat, roundName] of Object.entries(justRaced)) text = setRoundInText(text, cat, roundName);
+        fs.writeFileSync(CONFIG_PATH, text);
 
         const channelId = config.canal_anuncios_reports_id;
         if (!channelId || channelId === '???') {
@@ -363,7 +382,7 @@ async function syncReports(client, config) {
                     .setDescription(`Incident reports are open for the races that were just run:\n\n${lines.join('\n')}\n\nUse \`/report\` to submit your incident.`)
                     .setTimestamp();
                 // Ping every category's league role, not just the ones that raced.
-                const roleIds = Object.values(config.roles_liga_jugador || {}).filter(id => id && id !== '???');
+                const roleIds = Object.values(config.league_driver_roles || {}).filter(id => id && id !== '???');
                 await channel.send({
                     content: roleIds.map(id => `<@&${id}>`).join(' ') || undefined,
                     embeds: [embed],

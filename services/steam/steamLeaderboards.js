@@ -31,21 +31,47 @@ function connect() {
     const refreshToken = process.env.STEAM_REFRESH_TOKEN;
     if (!refreshToken) return Promise.reject(new Error('STEAM_REFRESH_TOKEN is not set in .env'));
 
-    user = new SteamUser({ autoRelogin: true });
+    const u = (user = new SteamUser({ autoRelogin: true }));
     ready = new Promise((resolve, reject) => {
-        user.once('loggedOn', () => {
+        u.once('loggedOn', () => {
             console.log('🎮 [Leaderboards] Steam session ready.');
             resolve();
         });
-        user.once('error', err => {
-            ready = null; // allow a later retry
-            reject(new Error(`Steam login failed: ${err.message}`));
-        });
+        u.once('error', err => reject(new Error(`Steam login failed: ${err.message}`)));
     });
-    user.on('error', err => console.error('❌ [Leaderboards] Steam:', err.message));
+    // A fatal error (also after login, e.g. "LoggedInElsewhere") ends the
+    // session for good: forget it so the next request logs in again, instead
+    // of every request timing out on a dead session.
+    u.on('error', err => {
+        console.error('❌ [Leaderboards] Steam:', err.message);
+        resetSession(u);
+    });
+    u.on('disconnected', (eresult, msg) => console.warn(`⚠️ [Leaderboards] Steam disconnected (${msg || eresult}), reconnecting…`));
 
-    user.logOn({ refreshToken });
+    u.logOn({ refreshToken });
     return ready;
+}
+
+/** Drop the current Steam session; the next call logs in again. */
+function resetSession(which = user) {
+    if (which !== user) return; // an older session already replaced
+    try { which.logOff(); } catch { /* already gone */ }
+    user = null;
+    ready = null;
+}
+
+/** Runs fn(user); if Steam doesn't answer, starts a new session and tries once more. */
+async function withSteam(fn) {
+    for (let attempt = 0; ; attempt++) {
+        await connect();
+        try {
+            return await fn(user);
+        } catch (err) {
+            if (attempt > 0 || !/timed out|did not answer|not logged|NoConnection|ServiceUnavailable/i.test(err.message)) throw err;
+            console.warn(`⚠️ [Leaderboards] Steam request failed (${err.message}), new session and retry.`);
+            resetSession();
+        }
+    }
 }
 
 function request(emsg, Proto, body, ResponseProto) {
@@ -65,12 +91,11 @@ function request(emsg, Proto, body, ResponseProto) {
 
 /** @returns {Promise<{id:number, entries:number}|null>} null if it doesn't exist */
 async function findLeaderboard(name) {
-    await connect();
-    const res = await request(EMSG_FIND, Schema.CMsgClientLBSFindOrCreateLB, {
+    const res = await withSteam(() => request(EMSG_FIND, Schema.CMsgClientLBSFindOrCreateLB, {
         app_id: APP_ID,
         leaderboard_name: name,
         create_if_not_found: false
-    }, Schema.CMsgClientLBSFindOrCreateLBResponse);
+    }, Schema.CMsgClientLBSFindOrCreateLBResponse));
 
     if (res.eresult !== 1 || !res.leaderboard_id) return null;
     return { id: res.leaderboard_id, entries: res.leaderboard_entry_count };
@@ -78,14 +103,13 @@ async function findLeaderboard(name) {
 
 /** Ranked entries [start..end] (1-based, inclusive) of a leaderboard. */
 async function getEntries(leaderboardId, start = 1, end = 10) {
-    await connect();
-    const res = await request(EMSG_GET_ENTRIES, Schema.CMsgClientLBSGetLBEntries, {
+    const res = await withSteam(() => request(EMSG_GET_ENTRIES, Schema.CMsgClientLBSGetLBEntries, {
         app_id: APP_ID,
         leaderboard_id: leaderboardId,
         range_start: start,
         range_end: end,
         leaderboard_data_request: DATA_REQUEST_GLOBAL
-    }, Schema.CMsgClientLBSGetLBEntriesResponse);
+    }, Schema.CMsgClientLBSGetLBEntriesResponse));
 
     if (res.eresult !== 1) throw new Error(`Steam returned eresult ${res.eresult}`);
     return (res.entries || []).map(e => ({
@@ -95,4 +119,10 @@ async function getEntries(leaderboardId, start = 1, end = 10) {
     }));
 }
 
-module.exports = { connect, findLeaderboard, getEntries };
+/** The logged-in steam-user client (shared with the replay asset downloads). */
+async function getSteamUser() {
+    await connect();
+    return user;
+}
+
+module.exports = { connect, getSteamUser, withSteam, findLeaderboard, getEntries };

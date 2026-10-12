@@ -1,9 +1,13 @@
 {
   "dependencies": {
+    "@doctormckay/steam-crypto": "^1.2.0",
     "@napi-rs/canvas": "^1.0.9",
+    "adm-zip": "^0.5.18",
     "discord.js": "^14.26.4",
     "dotenv": "^17.4.2",
     "express": "^4.19.2",
+    "lzma": "^2.3.2",
+    "seek-bzip": "^2.0.0",
     "steam-user": "^5.2.0"
   },
   "devDependencies": {

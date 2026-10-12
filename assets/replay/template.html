@@ -1,0 +1,1067 @@
+<!doctype html>
+<!--
+  Race replay page. This file is the original: edit the replay here.
+  services/replay/render.js fills it for each race: the replay data goes in
+  place of the REPLAY_DATA placeholder and the title in place of REPLAY_TITLE.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>/*__REPLAY_TITLE__*/</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Titillium+Web:wght@400;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500&display=swap">
+<style>
+/* Layout: TV-broadcast replay. Onboard camera fills the frame; timing tower top-left, lap counter + clock top-right,
+   driver card bottom-left, minimap top-right. Controls and livery editor below. Deliberately single dark theme. */
+:root {
+  --bg: #0b0d10;
+  --panel: #14181d;
+  --line: #262d35;
+  --fg: #eef2f5;
+  --muted: #8a96a2;
+  --accent: #ffcc33;
+  --plate: rgba(21, 21, 30, 0.90);   /* broadcast graphic plate */
+  --plate-line: rgba(255, 255, 255, 0.12);
+  --plate-muted: #b7bac4;
+  --plate-ink: #15151e;
+  --hot: #e10600;                     /* broadcast red: lap counter, followed driver */
+  --font-display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, monospace;
+  --font-tv: "Titillium Web", "Arial Narrow", sans-serif;
+  color-scheme: dark;
+}
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); }
+.wrap { max-width: 1360px; margin: 0 auto; padding-inline: 16px; padding-block: 16px 28px; display: grid; gap: 12px; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; }
+h1 { font-family: var(--font-display); font-weight: 700; font-size: 1.9rem; letter-spacing: .02em; margin: 0; text-transform: uppercase; }
+h1 span { color: var(--accent); }
+.meta { color: var(--muted); font-size: .85rem; }
+
+/* Broadcast frame */
+.view { --u: min(1cqw, 1.7778cqh); position: relative; background: #3a4a33; border-radius: 6px; overflow: hidden; aspect-ratio: 16 / 9; max-width: 100%; container-type: size; }
+#cv { display: block; width: 100%; height: 100%; }
+/* Broadcast graphics in the style of the F1 TV package: dark plates, white type, team-colour slivers,
+   the lap count heading the timing tower and the followed driver as a white band. */
+.tv { position: absolute; pointer-events: none; font-family: var(--font-tv); color: #fff; }
+/* Up to 20 rows: the row text shrinks so the tower always fits in the frame. */
+.tower { --rows: 10; left: calc(1.6 * var(--u)); top: calc(2 * var(--u)); width: clamp(130px, calc(15 * var(--u)), 210px); max-height: calc(100cqh - calc(4 * var(--u)));
+  background: var(--plate); border-radius: .55em; overflow: visible; box-shadow: 0 .3em 1em rgba(0,0,0,.35);
+  font-size: min(calc(1.2 * var(--u)), calc(68cqh / (var(--rows) + 2.2) / 1.5)); }
+.tower .head { position: relative; display: grid; justify-items: center; padding: .55em .6em .45em; border-bottom: 1px solid var(--plate-line); }
+.tower .head::before { content: ""; position: absolute; inset: 0 0 auto; height: .22em; background: var(--hot); }
+.tower .head .lbl { font-size: max(8px, .75em); font-weight: 600; letter-spacing: .14em; color: var(--plate-muted); }
+.tower .head .lap { font-size: max(12px, 1.55em); font-weight: 700; line-height: 1; }
+.tower .head .lap span { color: var(--plate-muted); font-weight: 600; }
+.tower .rows { display: grid; padding: .2em 0 .3em; }
+.trow { position: relative; display: grid; grid-template-columns: 1.7em 3px 1fr auto auto; align-items: center; gap: .5em; padding: .16em .65em .16em .4em;
+  font-size: max(9px, 1em); line-height: 1.25; }
+.trow .pos { font-weight: 700; text-align: center; font-variant-numeric: tabular-nums; }
+.trow .tbar { display: block; width: 3px; height: 1.05em; border-radius: 1px; justify-self: start; }
+.trow .tla { font-weight: 700; letter-spacing: .04em; }
+.trow .gap { font-size: .88em; font-weight: 600; color: var(--plate-muted); font-variant-numeric: tabular-nums; }
+.trow.me { background: #fff; color: var(--plate-ink); }
+.trow.me .gap { color: var(--plate-ink); }
+.trow.out { opacity: .4; }
+.tower .head { border-radius: .55em .55em 0 0; }
+.tower .rows > .trow:last-child { border-radius: 0 0 .55em .55em; }
+/* Tags outside the tower, attached to its right edge: P = in the pit lane, chequered = finished */
+.trow .tag { position: absolute; left: 100%; top: 1px; bottom: 1px; aspect-ratio: 1; display: grid; place-items: center;
+  background: var(--plate); color: #fff; font: 700 .85em/1 var(--font-tv); border-radius: 0 .25em .25em 0;
+  box-shadow: .15em 0 .4em rgba(0,0,0,.35); }
+.trow .tag.fin { background: repeating-conic-gradient(#111 0 25%, #fff 0 50%) 0 0 / 50% 50%; box-shadow: inset 0 0 0 1px rgba(0,0,0,.5); }
+.card { left: calc(1.6 * var(--u)); bottom: calc(2 * var(--u)); display: flex; align-items: stretch; background: var(--plate); border-radius: .5em; overflow: hidden;
+  box-shadow: 0 .3em 1em rgba(0,0,0,.35); font-size: clamp(11px, calc(1.45 * var(--u)), 19px); }
+.card .p { background: #fff; color: var(--plate-ink); font-weight: 700; font-size: 1.9em; padding: 0 .4em; display: grid; place-items: center; min-width: 1.5em; font-variant-numeric: tabular-nums; }
+.card .stripe { width: .3em; }
+.card .who { padding: .4em .9em .4em .7em; display: grid; align-content: center; gap: .05em; }
+.card .who .n { font-weight: 700; font-size: 1.35em; text-transform: uppercase; letter-spacing: .02em; line-height: 1.05; }
+.card .who .s { font-size: .78em; font-weight: 600; color: var(--plate-muted); letter-spacing: .06em; text-transform: uppercase; }
+.card .spd { display: grid; align-content: center; justify-items: end; padding: .3em .9em; border-left: 1px solid var(--plate-line); }
+.card .spd b { font-size: 1.55em; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+.card .spd small { font-size: .62em; font-weight: 600; letter-spacing: .12em; color: var(--plate-muted); }
+.card img { height: 2.4em; align-self: center; padding: 0 .9em 0 .2em; }
+.card .secs { display: none; grid-template-columns: repeat(3, 4.6em); border-left: 1px solid var(--plate-line); }
+.card.quali .secs { display: grid; }
+/* Sector boxes, F1 colours: purple = fastest of the session, green = personal best, yellow = slower. */
+.sec { display: grid; align-content: center; justify-items: center; gap: .1em; padding: .3em .2em; border-top: .25em solid #4a4d55; }
+.sec small { font-size: .6em; font-weight: 600; letter-spacing: .12em; color: var(--plate-muted); }
+.sec b { font-size: .95em; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; }
+.sec.purple { border-top-color: #a23bf2; } .sec.purple b { color: #c98bff; }
+.sec.green { border-top-color: #00c853; } .sec.green b { color: #4be38a; }
+.sec.yellow { border-top-color: #ffd000; } .sec.yellow b { color: #ffe066; }
+.sec.run b { color: var(--plate-muted); }
+/* Tower (qualifying): one small bar per sector of the lap in progress. */
+.tower.quali { width: clamp(170px, calc(19 * var(--u)), 260px); }
+.trow.q { grid-template-columns: 1.7em 3px 1fr auto 4.6em auto; }
+.trow.q .gap { white-space: nowrap; text-align: right; }
+.tsecs { display: flex; gap: 2px; }
+.tsecs i { width: .7em; height: .32em; border-radius: 1px; background: #4a4d55; }
+.tsecs i.purple { background: #a23bf2; } .tsecs i.green { background: #00c853; } .tsecs i.yellow { background: #ffd000; }
+#mini { position: absolute; right: calc(1.6 * var(--u)); top: calc(2 * var(--u)); width: calc(22 * var(--u)); max-width: 280px; aspect-ratio: 512 / 427; background: transparent; filter: drop-shadow(0 0 2px rgba(0,0,0,.7)); }
+
+/* Controls */
+.drivers { display: flex; flex-wrap: wrap; gap: 6px; }
+.drv { display: flex; align-items: center; gap: 8px; padding: 5px 10px 5px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--fg); font: 500 .85rem var(--font-body); cursor: pointer; }
+.drv img { width: 44px; height: 18px; object-fit: contain; }
+.drv[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; }
+button.btn { font: 600 .9rem var(--font-body); color: var(--bg); background: var(--accent); border: 0; border-radius: 4px; padding: 8px 16px; cursor: pointer; min-width: 84px; }
+.grp { display: flex; align-items: center; gap: 4px; }
+.grp > span { color: var(--muted); font-size: .78rem; margin-right: 4px; }
+.grp button { font: 500 .8rem var(--font-data); color: var(--muted); background: none; border: 1px solid var(--line); border-radius: 4px; padding: 6px 8px; cursor: pointer; }
+.grp button[aria-pressed="true"] { color: var(--fg); border-color: var(--accent); }
+.scrub { flex: 1 1 260px; display: flex; align-items: center; gap: 10px; min-width: 0; }
+input[type=range] { flex: 1; min-width: 0; accent-color: var(--accent); }
+.clock { font-family: var(--font-data); font-variant-numeric: tabular-nums; font-size: .95rem; white-space: nowrap; }
+.clock small { color: var(--muted); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Livery editor */
+details.liv { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; }
+details.liv summary { cursor: pointer; font-family: var(--font-display); font-weight: 600; font-size: 1.1rem; letter-spacing: .06em; text-transform: uppercase; }
+.liv-body { display: grid; gap: 16px; margin-top: 12px; }
+.liv-body h3 { margin: 0 0 8px; font-size: .78rem; color: var(--muted); font-weight: 500; letter-spacing: .08em; text-transform: uppercase; }
+.slots { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.slot { border: 1px solid var(--line); border-radius: 4px; padding: 8px; display: grid; gap: 6px; }
+.slot .top { display: flex; justify-content: space-between; align-items: center; font: 500 .8rem var(--font-data); color: var(--muted); }
+.slot .pic { height: 40px; display: grid; place-items: center; background: #2c3b28; border-radius: 3px; }
+.slot .pic img { max-height: 32px; max-width: 100%; }
+.slot .acts { display: flex; gap: 6px; }
+.slot label, .slot button { font: 500 .78rem var(--font-body); color: var(--fg); background: none; border: 1px solid var(--line); border-radius: 4px; padding: 4px 8px; cursor: pointer; }
+.slot input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.assign { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 6px 12px; }
+.assign label { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: .85rem; }
+.assign select { font: 500 .8rem var(--font-data); background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; }
+.note { color: var(--muted); font-size: .8rem; max-width: 80ch; line-height: 1.5; margin: 0; }
+
+/* Tyre badge, F1 style: coloured ring with the compound letter */
+.tyre { display: inline-block; min-width: .9em; text-align: center; font: 700 .85em/1 var(--font-tv); }
+.card .who .s .tyre { font-size: 1.05em; margin-right: .4em; }
+/* White row of the followed driver: dark outline so yellow / white letters stay readable */
+.trow.me .tyre { -webkit-text-stroke: .6px #000; text-shadow: 0 0 1px #000, 0 0 2px #000; }
+.drv.free { font-weight: 700; }
+/* Free cam follows nobody: no driver card */
+.card.freecam { display: none; }
+.view.panning, .view.panning canvas { cursor: grabbing; }
+#cv { cursor: grab; }
+
+/* Weather change popup, top centre */
+.wx-alert { position: absolute; left: 50%; top: calc(2 * var(--u)); transform: translate(-50%, -140%); opacity: 0;
+  display: flex; align-items: center; gap: .6em; padding: .45em 1.1em .45em .7em; border-radius: .5em;
+  background: var(--plate); color: #fff; font: 700 clamp(13px, calc(1.6 * var(--u)), 22px)/1.1 var(--font-tv);
+  border-right: .3em solid #2f7fd8; letter-spacing: .02em; box-shadow: 0 .3em 1em rgba(0,0,0,.45);
+  transition: transform .35s ease, opacity .35s ease; pointer-events: none; z-index: 3; white-space: nowrap; }
+.wx-alert.show { transform: translate(-50%, 0); opacity: 1; }
+.wx-alert .ic { display: grid; place-items: center; width: 2.2em; height: 2.2em; margin: -.45em 0 -.45em -.7em;
+  background: #15151e; border-radius: .5em 0 0 .5em; }
+.wx-alert .ic svg { width: 1.5em; height: 1.5em; display: block; }
+.wx-alert .tx { display: flex; flex-direction: column; }
+.wx-alert small { font-size: .55em; letter-spacing: .12em; color: #9fc3ff; }
+
+/* Full-quality track image */
+.file-btn { display: inline-block; font: 500 .85rem var(--font-body); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; padding: 6px 12px; cursor: pointer; }
+.file-btn input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+#mapNote { margin-left: 8px; }
+
+/* Fullscreen: fill the screen, whatever its shape */
+.view:fullscreen { aspect-ratio: auto; width: 100%; height: 100%; max-width: none; border-radius: 0; }
+
+/* Keyboard shortcuts */
+.keys-hint { color: var(--muted); font-size: .78rem; }
+.keys-hint kbd, .keys kbd { font: 600 .75rem var(--font-data); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 1px 6px; background: var(--bg); color: var(--fg); }
+.keys { position: fixed; inset: 0; display: none; place-items: center; background: rgba(0,0,0,.6); z-index: 10; }
+.keys.open { display: grid; }
+.keys .box { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 18px 22px; max-width: 520px; width: calc(100% - 32px); }
+.keys h3 { margin: 0 0 12px; font-size: 1rem; }
+.keys dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 0; font-size: .88rem; }
+.keys dt { text-align: right; white-space: nowrap; }
+.keys dd { margin: 0; color: var(--muted); }
+</style>
+
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Race <span>Replay</span></h1>
+    <span class="meta" id="meta"></span>
+  </header>
+
+  <div class="view">
+    <canvas id="cv" aria-label="Onboard view following the selected driver"></canvas>
+    <div class="tv wx-alert" id="wxAlert" role="status" aria-live="polite"></div>
+    <div class="tv tower" aria-label="Timing tower">
+      <div class="head"><span class="lbl" id="towerLbl">LAP</span><span class="lap" id="towerLap">1<span>/10</span></span></div>
+      <div class="rows" id="rows"></div>
+    </div>
+    <div class="tv card" aria-label="Followed driver">
+      <span class="p" id="cardPos">1</span><span class="stripe" id="cardStripe"></span>
+      <span class="who"><span class="n" id="cardName">—</span><span class="s" id="cardSub">—</span></span>
+      <span class="secs" id="cardSecs"></span>
+      <span class="spd"><b id="cardSpeed">—</b><small>PX/S</small></span>
+      <img id="cardImg" alt="">
+    </div>
+    <canvas id="mini" aria-label="Whole track with every car"></canvas>
+  </div>
+
+  <div class="drivers" id="drivers" role="group" aria-label="Choose the driver to follow"></div>
+
+  <div class="bar">
+    <button class="btn" id="play" type="button">Play</button>
+    <div class="grp" id="speeds" role="group" aria-label="Playback speed"><span>Speed</span></div>
+    <div class="grp" id="zooms" role="group" aria-label="Camera zoom"><span>Zoom</span></div>
+    <div class="grp" id="lagview" role="group" aria-label="Driver latency"><span>Latency</span></div>
+    <div class="scrub">
+      <input id="seek" type="range" min="0" value="0" step="1" aria-label="Race time">
+      <span class="clock" id="clock">0:00.0 <small>/ 0:00</small></span>
+    </div>
+  </div>
+
+  <p class="keys-hint">Keyboard shortcuts: press <kbd>?</kbd></p>
+
+  <div class="keys" id="keys" role="dialog" aria-label="Keyboard shortcuts">
+    <div class="box">
+      <h3>Keyboard shortcuts</h3>
+      <dl>
+        <dt><kbd>Space</kbd> / <kbd>K</kbd></dt><dd>Play / pause</dd>
+        <dt><kbd>←</kbd> <kbd>→</kbd> / <kbd>J</kbd> <kbd>L</kbd></dt><dd>Back / forward 10 s</dd>
+        <dt><kbd>Shift</kbd> + <kbd>←</kbd> <kbd>→</kbd></dt><dd>Back / forward 1 s</dd>
+        <dt><kbd>,</kbd> <kbd>.</kbd></dt><dd>Previous / next frame (pauses)</dd>
+        <dt><kbd>Home</kbd> <kbd>End</kbd></dt><dd>Start / end of the race</dd>
+        <dt><kbd>↑</kbd> <kbd>↓</kbd></dt><dd>Follow the car ahead / behind</dd>
+        <dt><kbd>1</kbd>…<kbd>9</kbd>, <kbd>0</kbd></dt><dd>Follow the driver in P1…P9, P10</dd>
+        <dt><kbd>C</kbd></dt><dd>Free camera on / off</dd>
+        <dt><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / drag</dt><dd>Move the free camera</dd>
+        <dt>Mouse wheel</dt><dd>Zoom in / out</dd>
+        <dt><kbd>-</kbd> <kbd>+</kbd></dt><dd>Slower / faster playback</dd>
+        <dt><kbd>Z</kbd></dt><dd>Change zoom (Far / Mid / Close)</dd>
+        <dt class="lagkey"><kbd>V</kbd></dt><dd class="lagkey">Latency: as seen in game / raw</dd>
+        <dt><kbd>M</kbd></dt><dd>Show / hide the minimap</dd>
+        <dt><kbd>H</kbd></dt><dd>Show / hide timing tower and driver card</dd>
+        <dt><kbd>F</kbd></dt><dd>Fullscreen</dd>
+        <dt><kbd>?</kbd> / <kbd>Esc</kbd></dt><dd>Show / close this help</dd>
+      </dl>
+    </div>
+  </div>
+
+  <details class="liv" id="trackq">
+    <summary>Track image</summary>
+    <div class="liv-body">
+      <p class="note">The map is embedded at reduced quality to keep the file small. For full quality, load this track's
+        <code>track.png</code> from your game folder: <code id="trackPath"></code>. It isn't saved: load it again next time you open the replay.</p>
+      <div><label class="file-btn">Load track.png<input type="file" id="mapFile" accept="image/png,image/*"></label> <span class="note" id="mapNote"></span></div>
+    </div>
+  </details>
+
+  <details class="liv" id="liv">
+    <summary>Liveries</summary>
+    <div class="liv-body">
+      <div>
+        <h3>10 livery slots</h3>
+        <div class="slots" id="slots"></div>
+      </div>
+      <div>
+        <h3>Livery per driver</h3>
+        <div class="assign" id="assign"></div>
+      </div>
+      <p class="note">Easiest: put <code>1.png</code> … <code>10.png</code> in the <code>liveries</code> folder next to this page and set who drives which in <code>liveries/config.js</code>. Images are top-down cars with the nose pointing right and a transparent background (around 109 × 45 px). Uploads and choices made here override the folder, in this browser only.</p>
+    </div>
+  </details>
+
+  <p class="note" id="note">Positions are recorded at 60 per second from the lobby traffic and synced to the race clock. The order and intervals are worked out from each car's progress around the lap, so they can differ by a few tenths from the in-game timing screen.</p>
+</div>
+
+<script>
+// Loader: unpacks the compressed car data, then starts the replay.
+(async () => {
+  const D = window.REPLAY_DATA = /*__REPLAY_DATA__*/null;
+  const b64bytes = s => Uint8Array.from(atob(s), ch => ch.charCodeAt(0));
+  async function unpack(s, T) {
+    const stream = new Blob([b64bytes(s)]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+    const buf = await new Response(stream).arrayBuffer();
+    const d = new Int32Array(buf), out = new T(d.length);
+    let v = 0; for (let i = 0; i < d.length; i++) { v += d[i]; out[i] = v; }
+    return out;
+  }
+  if (D.packed === 'delta-deflate') {
+    await Promise.all(D.cars.flatMap(c => [['x', Int16Array], ['y', Int16Array], ['a', Int16Array], ['p', Int32Array]]
+      .map(async ([k, T]) => { c[k] = await unpack(c[k], T); })));
+  }
+  const s = document.createElement('script');
+  s.text = document.getElementById('replay-main').textContent;
+  document.body.appendChild(s);
+})();
+</script>
+<script type="text/plain" id="replay-main">
+const DATA = window.REPLAY_DATA;
+window.LIVERY_CONFIG = DATA.liveryConfig || window.LIVERY_CONFIG;
+// Weather: [frame, rain 0-1, track wetness 0-1] and announced changes [frame, kind].
+const WX36 = DATA.weather || [];
+// Pit-lane windows: [car id, in frame, out frame].
+const PITS = DATA.pits || [];
+// Tyre changes: [frame, car id, S|M|H|I|W], sorted by frame.
+const TYRES = (DATA.tyres || []).slice().sort((a, b) => a[0] - b[0]);
+const HZ = DATA.hz, total = DATA.frames, LAP = DATA.lapLen, LAPS = DATA.laps;
+// Qualifying: every car on its own, ordered by best lap time (the game's lap times, DATA.cars[].laps).
+const QUALI = DATA.session === 'qualifying';
+const CAR_LEN = DATA.carLen || 44, JUMP = 40;
+const NONE16 = -32768, NONE32 = -2147483648;
+const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+const mini = document.getElementById('mini'), mctx = mini.getContext('2d');
+const mapImg = new Image(); mapImg.src = DATA.map.src;
+const miniImg = new Image(); miniImg.src = DATA.mini.src; // track outline, its own framing (DATA.mini.s / ox / oy)
+const M = DATA.map, WORLD_W = M.w / M.s, WORLD_H = M.h / M.s;
+
+const dec = (b64, T) => { if (typeof b64 !== 'string') return b64; const s = atob(b64), u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return new T(u.buffer); };
+const cars = DATA.cars.map(c => ({ id: String(c.id), name: c.name, ping: c.ping, tla: c.name.replace(/[^A-Za-z]/g, '').slice(0, 3).toUpperCase(),
+  x: dec(c.x, Int16Array), y: dec(c.y, Int16Array), a: dec(c.a, Int16Array), p: dec(c.p, Int32Array),
+  laps: c.laps || [], timedFrom: c.timedFrom ?? null }));
+
+// Best progress so far per frame, for "when did this car reach distance d" (intervals).
+for (const c of cars) {
+  const best = new Float64Array(total); let m = -Infinity;
+  for (let k = 0; k < total; k++) { if (c.p[k] !== NONE32 && c.p[k] > m) m = c.p[k]; best[k] = m; }
+  c.best = best;
+}
+function reachedAt(c, d, k) { // first frame <= k where c.best >= d, or -1
+  if (k < 0 || c.best[k] < d) return -1;
+  let lo = 0, hi = k; while (lo < hi) { const mid = (lo + hi) >> 1; if (c.best[mid] >= d) hi = mid; else lo = mid + 1; } return lo;
+}
+
+// Qualifying sectors: each timed lap split in three equal parts of the lap distance
+// (the game doesn't send its sector times). Sector 3 is the game's lap time minus
+// sectors 1 and 2, so the three add up to the official lap.
+// c.secs = [{ lap, j (0-2), end frame, time }], in order.
+if (QUALI) for (const c of cars) {
+  c.secs = [];
+  if (c.timedFrom == null || c.p[c.timedFrom] === NONE32) continue;
+  const base = Math.floor(c.p[c.timedFrom] / LAP + 0.5) * LAP; // distance at the line, start of timed lap 1
+  for (let n = 0; n < LAPS; n++) {
+    const official = c.laps[n];
+    let prev = n ? c.laps[n - 1][0] : c.timedFrom, sum = 0;
+    for (let j = 0; j < 3; j++) {
+      let end, time;
+      if (j < 2) {
+        end = reachedAt(c, base + n * LAP + (j + 1) * LAP / 3, total - 1);
+        if (end < 0 || (official && end > official[0])) break;
+        time = (end - prev) / HZ;
+      } else {
+        if (!official) break;
+        end = official[0]; time = Math.max(0, official[1] - sum);
+      }
+      c.secs.push({ lap: n + 1, j, start: prev, end, time });
+      sum += time; prev = end;
+    }
+    if (!official) break;
+  }
+}
+// Sector boxes of the followed car at frame k: its current lap's sectors, coloured
+// against its own best and everyone's best so far.
+function sectorState(c, k, lap) {
+  const kc = Math.floor(tOf(c, k));
+  const bestAll = [Infinity, Infinity, Infinity], bestMine = [Infinity, Infinity, Infinity];
+  for (const o of cars) { const ko = Math.floor(tOf(o, k)); for (const e of o.secs || []) if (e.end <= ko) { bestAll[e.j] = Math.min(bestAll[e.j], e.time); if (o === c) bestMine[e.j] = Math.min(bestMine[e.j], e.time); } }
+  const done = (c.secs || []).filter(e => e.lap === lap && e.end <= kc);
+  // The sector being driven runs from the end of the last one done (or the line).
+  const from = done.length ? done[done.length - 1].end : lap > 1 ? c.laps[lap - 2]?.[0] : c.timedFrom;
+  return [0, 1, 2].map(j => {
+    const e = done.find(x => x.j === j);
+    if (e) return { cls: e.time <= bestAll[j] + 1e-9 ? 'purple' : e.time <= bestMine[j] + 1e-9 ? 'green' : 'yellow', txt: e.time.toFixed(3) };
+    return { cls: 'run', txt: j === done.length && from != null && kc >= from ? ((kc - from) / HZ).toFixed(1) : '—' };
+  });
+}
+// Lap whose sectors are shown: the one in progress, the last one once finished, none on the out lap.
+const sectorLap = o => (!o || o.outLap ? 0 : o.finished ? LAPS : o.lap);
+function sectorBoxes(c, k, lap) {
+  return sectorState(c, k, lap).map((s, j) => `<span class="sec ${s.cls}"><small>S${j + 1}</small><b>${s.txt}</b></span>`).join('');
+}
+function sectorBars(o, k) {
+  const lap = sectorLap(o);
+  return `<span class="tsecs">${(lap ? sectorState(o.c, k, lap) : [{}, {}, {}]).map(s => `<i class="${s.cls || ''}"></i>`).join('')}</span>`;
+}
+
+// ---------- Liveries (10 slots, stored in this browser) ----------
+const store = { get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} } };
+const DEFAULTS = DATA.sprites;
+const STORE_KEY = `ur2d2:${DATA.replayId || `${DATA.track}:${DATA.frames}:${DATA.cars.map(c => c.name).join(',')}`}`;
+let slotSrc = store.get(`${STORE_KEY}:liveries`) || Array(10).fill(null);
+// Livery per driver: liveries/config.js (by driver name or car number, livery 1-10) > choices saved in this browser > car order.
+const cfgAssign = {};
+for (const c of (typeof window !== 'undefined' && window.LIVERY_CONFIG ? Object.entries(window.LIVERY_CONFIG.assign || {}) : [])) cfgAssign[c[0]] = c[1] - 1;
+let assign = Object.assign(Object.fromEntries(cars.map((c, i) => [c.id, i % 10])),
+  Object.fromEntries(cars.filter(c => (cfgAssign[c.name] ?? cfgAssign[c.id]) !== undefined).map(c => [c.id, cfgAssign[c.name] ?? cfgAssign[c.id]])),
+  store.get(`${STORE_KEY}:assign`) || {});
+const slotImg = [], slotColor = [];
+// Priority: image uploaded in this browser > liveries/<n>.png next to the page > built-in default.
+const folderSrc = Array(10).fill(null);
+const CFG = window.LIVERY_CONFIG || {};
+function slotSource(i) { return slotSrc[i] || folderSrc[i] || DEFAULTS[i % DEFAULTS.length]; }
+function loadSlot(i) {
+  const img = new Image();
+  img.onload = () => {
+    // Colour for the tower stripe: liveries/config.js "colors" > read from the image (not allowed for local files) > grey.
+    const fixed = (window.LIVERY_CONFIG?.colors || {})[i + 1];
+    try { slotColor[i] = fixed || dominant(img); } catch { slotColor[i] = fixed || '#9aa4ad'; }
+    draw(); renderAssign(); renderDrivers();
+  };
+  img.src = slotSource(i); slotImg[i] = img;
+}
+function probeFolder(i) {
+  const probe = new Image();
+  probe.onload = () => { folderSrc[i] = probe.src; if (!slotSrc[i]) { loadSlot(i); renderSlots(); } };
+  if (location.protocol !== 'file:' || window.LIVERY_FOLDER) probe.src = `liveries/${i + 1}.png`;
+}
+function dominant(img) { // most saturated average colour of the livery, for the tower stripe
+  const c = document.createElement('canvas'); c.width = 32; c.height = 14; const g = c.getContext('2d'); g.drawImage(img, 0, 0, 32, 14);
+  const d = g.getImageData(0, 0, 32, 14).data; let r = 0, gg = 0, b = 0, n = 0;
+  for (let i = 0; i < d.length; i += 4) { if (d[i + 3] < 200) continue; const mx = Math.max(d[i], d[i + 1], d[i + 2]), mn = Math.min(d[i], d[i + 1], d[i + 2]); if (mx - mn < 40) continue; r += d[i]; gg += d[i + 1]; b += d[i + 2]; n++; }
+  return n ? `rgb(${r / n | 0},${gg / n | 0},${b / n | 0})` : '#9aa4ad';
+}
+for (let i = 0; i < 10; i++) { loadSlot(i); probeFolder(i); }
+const liveryOf = c => slotImg[assign[c.id] ?? 0];
+const colorOf = c => slotColor[assign[c.id] ?? 0] || '#9aa4ad';
+
+function renderSlots() {
+  const el = document.getElementById('slots'); el.innerHTML = '';
+  for (let i = 0; i < 10; i++) {
+    const s = document.createElement('div'); s.className = 'slot';
+    s.innerHTML = `<div class="top"><span>Livery ${i + 1}</span><span>${slotSrc[i] ? 'uploaded' : folderSrc[i] ? 'folder' : 'default'}</span></div>
+      <div class="pic"><img alt="Livery ${i + 1}" src="${slotSource(i)}"></div>
+      <div class="acts"><label for="up-${i}">Upload</label><input id="up-${i}" type="file" accept="image/*"><button type="button" ${slotSrc[i] ? '' : 'disabled'}>Reset</button></div>`;
+    s.querySelector('input').onchange = e => {
+      const f = e.target.files[0]; if (!f) return;
+      const r = new FileReader(); r.onload = () => { slotSrc[i] = r.result; store.set(`${STORE_KEY}:liveries`, slotSrc); loadSlot(i); renderSlots(); renderDrivers(); }; r.readAsDataURL(f);
+    };
+    s.querySelector('button').onclick = () => { slotSrc[i] = null; store.set(`${STORE_KEY}:liveries`, slotSrc); loadSlot(i); renderSlots(); renderDrivers(); };
+    el.append(s);
+  }
+}
+function renderAssign() {
+  const el = document.getElementById('assign'); el.innerHTML = '';
+  for (const c of cars) {
+    const l = document.createElement('label'); l.htmlFor = 'as-' + c.id;
+    l.innerHTML = `<span>${c.name}</span><select id="as-${c.id}">${Array.from({ length: 10 }, (_, i) => `<option value="${i}" ${assign[c.id] === i ? 'selected' : ''}>Livery ${i + 1}</option>`).join('')}</select>`;
+    l.querySelector('select').onchange = e => { assign[c.id] = +e.target.value; store.set(`${STORE_KEY}:assign`, assign); renderDrivers(); draw(); };
+    el.append(l);
+  }
+}
+
+// ---------- State & camera ----------
+// Camera zooms (Far / Mid / Close); qualifying is watched closer, one car at a time.
+const ZOOMS = QUALI ? [0.9, 1.15, 1.4] : [0.3, 0.55, 0.9];
+let t = 0, playing = false, speed = 1, zoom = ZOOMS[2], followId = cars[0].id, last = null;
+// "As seen in game": each car is shown half its ping late (the time its data takes to reach the server),
+// which is how the other drivers saw it. "Raw" shows every car at the moment it sent its position.
+// Qualifying: nobody races anybody, so there is only the raw view.
+let latency = !QUALI;
+const lagOf = c => (latency && c.ping ? Math.round(c.ping / 2000 * HZ) : 0);
+const tOf = (c, tt) => Math.max(0, tt - lagOf(c));
+const fmt = s => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, '0')}`;
+const has = (c, k) => k >= 0 && k < total && c.x[k] !== NONE16;
+// Lost packets leave single missing frames (up to ~2% of a car's samples). Bridging gaps of up to
+// MAX_GAP frames keeps the car on screen instead of blinking out for a frame.
+const MAX_GAP = 15;
+function prevSample(c, k) { for (let i = k; i >= 0 && i > k - MAX_GAP; i--) if (has(c, i)) return i; return -1; }
+function nextSample(c, k) { for (let i = k; i < total && i < k + MAX_GAP; i++) if (has(c, i)) return i; return -1; }
+
+function posAt(c, tt) {
+  const k0 = prevSample(c, Math.floor(tt));
+  if (k0 < 0) return null;
+  const k1 = nextSample(c, k0 + 1);
+  const x0 = c.x[k0], y0 = c.y[k0], a0 = c.a[k0];
+  if (k1 < 0 || Math.hypot(c.x[k1] - x0, c.y[k1] - y0) > JUMP * (k1 - k0)) {
+    // No usable next sample (end of data or a respawn jump): hold briefly, then hide.
+    return tt - k0 <= MAX_GAP ? { x: x0, y: y0, ang: a0, v: c.v ?? 0 } : null;
+  }
+  const f = Math.min(1, (tt - k0) / (k1 - k0));
+  const x = x0 + (c.x[k1] - x0) * f, y = y0 + (c.y[k1] - y0) * f;
+  const ang = a0 + (((c.a[k1] - a0 + 540) % 360) - 180) * f;
+  // Speed over ~0.2 s so the readout doesn't jitter frame to frame.
+  const ka = prevSample(c, k0 - 6), kb = nextSample(c, k1 + 6);
+  const v = ka >= 0 && kb >= 0 ? Math.hypot(c.x[kb] - c.x[ka], c.y[kb] - c.y[ka]) / (kb - ka) * HZ : Math.hypot(c.x[k1] - x0, c.y[k1] - y0) / (k1 - k0) * HZ;
+  c.v = v;
+  return { x, y, ang, v };
+}
+
+let W = 0, H = 0, dpr = 1;
+mini.style.aspectRatio = `${DATA.mini.w} / ${DATA.mini.h}`;
+function resize() {
+  dpr = window.devicePixelRatio || 1;
+  for (const el of [cv, mini]) { const r = el.getBoundingClientRect(); el.width = r.width * dpr; el.height = r.height * dpr; }
+  const r = cv.getBoundingClientRect(); W = r.width; H = r.height; draw();
+}
+
+// Two cars side by side have almost the same progress; without a margin they would swap places
+// in the tower every frame. A car only moves up once it is SWAP_MARGIN px ahead.
+const SWAP_MARGIN = 20;
+let lastOrder = [];
+// Qualifying: best lap so far decides; a car without a time yet goes below the ones with a time.
+const fmtLap = s => (s >= 60 ? `${Math.floor(s / 60)}:${(s % 60).toFixed(3).padStart(6, '0')}` : s.toFixed(3));
+function qualiStandings(k) {
+  const live = cars.map((c, i) => {
+    const kc = Math.floor(tOf(c, k));
+    const done = c.laps.filter(l => l[0] <= kc);
+    const best = done.length ? Math.min(...done.map(l => l[1])) : Infinity;
+    const setAt = done.length ? done.find(l => l[1] === best)[0] : Infinity;
+    const finished = done.length >= LAPS;
+    const outLap = !finished && (c.timedFrom == null || kc < c.timedFrom);
+    const from = done.length ? done[done.length - 1][0] : c.timedFrom;
+    return { c, kc, i, best, setAt, finished, outLap, done: done.length,
+      lap: finished ? LAPS : outLap ? 0 : done.length + 1, running: outLap || finished ? null : (kc - from) / HZ };
+  });
+  live.sort((a, b) => a.best - b.best || a.setAt - b.setAt || a.i - b.i);
+  lastOrder = live.map(o => o.c.id);
+  const pole = live[0]?.best;
+  return live.map((o, i) => ({ ...o, pos: i + 1, out: !o.finished && !posAt(o.c, tOf(o.c, k)),
+    gap: !isFinite(o.best) ? (o.outLap ? 'OUT LAP' : 'NO TIME') : i === 0 ? fmtLap(o.best) : `+${(o.best - pole).toFixed(3)}` }));
+}
+
+function standings(k) {
+  if (QUALI) return qualiStandings(k);
+  const live = cars.map(c => { const kc = Math.floor(tOf(c, k)); return { c, kc, d: c.p[kc] !== NONE32 ? c.p[kc] : c.best[kc] }; }).filter(o => isFinite(o.d));
+  const rank = new Map(lastOrder.map((id, i) => [id, i]));
+  live.sort((a, b) => b.d - a.d);
+  if (rank.size) {
+    // Start from the previous order and only let a car pass when it is clearly ahead.
+    live.sort((a, b) => (rank.get(a.c.id) ?? 99) - (rank.get(b.c.id) ?? 99));
+    for (let i = 1; i < live.length; i++)
+      for (let j = i; j > 0 && live[j].d > live[j - 1].d + SWAP_MARGIN; j--) [live[j - 1], live[j]] = [live[j], live[j - 1]];
+  }
+  // F1 rule: once the winner completes the last lap, every other car finishes the
+  // next time it crosses the line (lapped cars too, with fewer laps).
+  const FINISH = LAPS * LAP;
+  for (const o of live) { o.fin = -1; o.finLaps = 0; }
+  const winnerFin = Math.min(...live.map(o => (o.c.best[o.kc] >= FINISH ? reachedAt(o.c, FINISH, o.kc) : Infinity)));
+  if (isFinite(winnerFin)) for (const o of live) {
+    const atWin = o.c.best[Math.min(winnerFin, o.kc)];
+    const line = Math.min(FINISH, (Math.floor(atWin / LAP) + 1) * LAP); // next crossing after the winner
+    const at = o.c.best[o.kc] >= line ? reachedAt(o.c, line, o.kc) : -1;
+    if (at >= 0) { o.fin = at; o.finLaps = Math.round(line / LAP); }
+  }
+  // Finishing doesn't jump a car ahead: a lapped finisher stays behind cars still
+  // running on a later lap. Finished cars count as having raced exactly their
+  // laps; among them, whoever crossed the line first is ahead.
+  if (live.some(o => o.fin >= 0)) {
+    const key = o => (o.fin >= 0 ? o.finLaps * LAP : o.d);
+    const prev = new Map(live.map((o, i) => [o, i]));
+    live.sort((a, b) => key(b) - key(a)
+      || (a.fin >= 0 && b.fin >= 0 ? a.fin - b.fin : (b.fin >= 0) - (a.fin >= 0))
+      || prev.get(a) - prev.get(b));
+  }
+  lastOrder = live.map(o => o.c.id);
+  return live.map((o, i) => {
+    if (o.fin >= 0) {
+      const down = LAPS - o.finLaps, gap = i === 0 ? 'Winner' : down > 0 ? `+${down} LAP${down > 1 ? 'S' : ''}` : `+${((o.fin - live[i - 1].fin) / HZ).toFixed(1)}`;
+      return { ...o, pos: i + 1, gap, lap: o.finLaps, out: false, finished: true };
+    }
+    let gap = '';
+    if (i === 0) gap = 'Leader';
+    else { const ah = live[i - 1], at = reachedAt(ah.c, o.d, ah.kc); gap = at < 0 ? '' : `+${(Math.max(0, ah.kc - at) / HZ).toFixed(1)}`; }
+    return { ...o, pos: i + 1, gap, lap: Math.min(LAPS, Math.max(1, Math.floor(o.d / LAP) + 1)), out: !posAt(o.c, tOf(o.c, k)) };
+  });
+}
+
+const inPit = (id, k) => PITS.some(([car, a, b]) => car === id && k >= a && k < b);
+
+// ---- Weather
+// Weather gauge: each *36 sets the value and how fast it moves per frame.
+function gaugeAt(k) {
+  let e = null; for (const x of WX36) { if (x[0] > k) break; e = x; }
+  if (!e) e = WX36[0];
+  return e ? Math.min(1, Math.max(0, e[1] + e[2] * Math.max(0, k - e[0]))) : 0;
+}
+// Track wetness: linear between samples (matches the game's wetness bar).
+function wetAt(k) {
+  if (!WX36.length) return 0;
+  let i = 0; while (i + 1 < WX36.length && WX36[i + 1][0] <= k) i++;
+  const a = WX36[i], b = WX36[i + 1];
+  return !b || k <= a[0] ? a[3] : a[3] + (b[3] - a[3]) * ((k - a[0]) / (b[0] - a[0]));
+}
+const stateOf = v => (v < 1 / 3 ? 'clear' : v < 2 / 3 ? 'cloud' : v < 5 / 6 ? 'rain' : 'heavyrain');
+function weatherAt(k) {
+  const v = gaugeAt(k);
+  return {
+    v, wet: wetAt(k), state: stateOf(v),
+    cloud: Math.min(1, Math.max(0, (v - 1 / 3) * 3)), // 0 at 1/3, full at 2/3 and above
+    rain: Math.min(1, Math.max(0, (v - 2 / 3) * 3)),  // 0 at 2/3, full at 1
+  };
+}
+// Weather announcements, as in the game: when the forecast (*39) arrives the game
+// shows "Coming soon" with the forecast icon for ~4 s; the weather itself
+// changes later (gauge). [frame, forecast state]
+const WEATHER_ALERTS = DATA.forecast || [];
+
+// Flat white pictograms on a 24x24 grid, like the F1 TV weather graphics.
+const WX_SUN = '<circle cx="12" cy="12" r="4.2" fill="#fff"/><g stroke="#fff" stroke-width="2" stroke-linecap="round">'
+  + [0, 45, 90, 135, 180, 225, 270, 315].map(a => `<line x1="12" y1="3" x2="12" y2="5.2" transform="rotate(${a} 12 12)"/>`).join('') + '</g>';
+const WX_CLOUD = (y = 0) => `<path transform="translate(0 ${y})" fill="#fff" d="M7 17.5a4.5 4.5 0 0 1-.6-8.96A6 6 0 0 1 17.6 8.6 4.5 4.5 0 0 1 17.5 17.5Z"/>`;
+const WX_DROPS = (n) => '<g stroke="#4da3ff" stroke-width="2" stroke-linecap="round">'
+  + [8, 12, 16, 10, 14].slice(0, n).map((x, i) => `<line x1="${x}" y1="${i < 3 ? 16 : 20}" x2="${x - 1.5}" y2="${i < 3 ? 19.5 : 23}"/>`).join('') + '</g>';
+const wxSvg = body => `<svg viewBox="0 0 24 24" aria-hidden="true">${body}</svg>`;
+const WX_ICONS = {
+  clear: wxSvg(WX_SUN),
+  cloud: wxSvg(WX_CLOUD(1)),
+  lightrain: wxSvg(WX_CLOUD(-3) + WX_DROPS(2)),
+  rain: wxSvg(WX_CLOUD(-3) + WX_DROPS(3)),
+  heavyrain: wxSvg(WX_CLOUD(-4) + WX_DROPS(5)),
+};
+WX_ICONS.storm = WX_ICONS.heavyrain;
+const WEATHER_NAMES = { clear: [WX_ICONS.clear, 'CLEAR'], cloud: [WX_ICONS.cloud, 'CLOUDY'], lightrain: [WX_ICONS.lightrain, 'LIGHT RAIN'],
+  rain: [WX_ICONS.rain, 'RAIN'], heavyrain: [WX_ICONS.heavyrain, 'HEAVY RAIN'], storm: [WX_ICONS.storm, 'STORM'] };
+const ALERT_S = 4; // seconds the popup stays up
+function alertAt(k) {
+  let cur = null;
+  for (const a of WEATHER_ALERTS) { if (a[0] > k) break; if (k - a[0] < ALERT_S * HZ) cur = a; }
+  return cur;
+}
+// Rain streaks in screen space; positions come from the race clock, so they
+// freeze on pause and replay identically when seeking.
+const DROPS = Array.from({ length: 420 }, (_, i) => {
+  const h = n => { const s = Math.sin(i * 12.9898 + n * 78.233) * 43758.5453; return s - Math.floor(s); };
+  return { x: h(1), y: h(2), v: 0.8 + h(3) * 0.5, l: 0.6 + h(4) * 0.6, a: 0.25 + h(5) * 0.35 };
+});
+function drawRain(g, w, sec) {
+  const n = Math.round(DROPS.length * Math.min(1, w.rain));
+  if (n) {
+    g.save(); g.lineCap = 'round'; g.lineWidth = 1.2;
+    const slant = 0.28, fall = H * 1.6; // px per second
+    for (let i = 0; i < n; i++) {
+      const d = DROPS[i], len = 14 + 16 * d.l;
+      const y = ((d.y * (H + len) + sec * fall * d.v) % (H + len)) - len;
+      const x = (((d.x * (W + 80) - y * slant) % (W + 80)) + W + 80) % (W + 80) - 40;
+      g.strokeStyle = `rgba(200, 220, 255, ${d.a})`;
+      g.beginPath(); g.moveTo(x, y); g.lineTo(x - len * slant, y + len); g.stroke();
+    }
+    g.restore();
+  }
+  // Cloud filter: grey, slightly darker sky from 1/3 of the gauge; heavier as the rain builds.
+  const veil = 0.18 * w.cloud + 0.1 * w.rain;
+  if (veil > 0) { g.fillStyle = `rgba(45, 52, 64, ${veil})`; g.fillRect(0, 0, W, H); }
+}
+
+// ---- Tyres
+function tyreAt(id, k) {
+  let cur = null;
+  for (const [f, car, ty] of TYRES) { if (f > k) break; if (car === id) cur = ty; }
+  return cur;
+}
+const TYRE_NAMES = { S: 'Soft', M: 'Medium', H: 'Hard', I: 'Intermediate', W: 'Wet' };
+const TYRE_COLORS = { S: '#e8102a', M: '#ffd200', H: '#f2f2f2', I: '#3ab54a', W: '#2f7fd8' };
+const tyreBadge = ty => (ty ? `<span class="tyre" style="color:${TYRE_COLORS[ty]}" title="${TYRE_NAMES[ty]}">${ty}</span>` : '');
+
+// ---- Free camera (C, drag the view, mouse wheel, WASD)
+let freeCam = false;
+const free = { x: 0, y: 0 };
+let lastCam = { x: 0, y: 0 };
+function setFreeCam(on) {
+  if (on && !freeCam) { free.x = lastCam.x; free.y = lastCam.y; }
+  freeCam = on; hudDirty = true; renderDrivers(); draw();
+}
+const minZoom = () => Math.max(W / WORLD_W, H / WORLD_H);
+function clampCam(x, halfW, worldW) { return worldW <= halfW * 2 ? worldW / 2 : Math.min(Math.max(x, halfW), worldW - halfW); }
+
+// Distance raced by a car at frame k (same measure as the timing tower).
+function raced(c, k) { const kc = Math.floor(tOf(c, k)); const d = c.p[kc] !== NONE32 ? c.p[kc] : c.best[kc]; return isFinite(d) ? d : null; }
+// Cars that are not on your lap are drawn see-through: relative to the leader in
+// free cam, and to the followed driver otherwise, both ways (cars he is lapping
+// and cars lapping him). Measured by distance (more than half a lap apart), so a
+// car that just crossed the line next to you doesn't flicker.
+const LAPPED_MARGIN = 0.5; // laps
+
+// ---- Puddles
+// Placed only where cars actually drove (every car, every lap), so they stay on
+// the asphalt. Each puddle is a pre-rendered sprite: an irregular blob of
+// several overlapping lobes, soft edges, darker water with a cool sky
+// reflection, a wet-dark rim and a thin light edge on the far side, like the
+// game's top-down art. Each has its own wetness threshold so they shrink and
+// disappear one by one as the track dries. While it rains, ripples appear.
+const PUDDLE_SPRITES = (() => {
+  const rnd = (i, n) => { const s = Math.sin(i * 127.1 + n * 311.7) * 43758.5453; return s - Math.floor(s); };
+  const out = [];
+  for (let v = 0; v < 10; v++) {
+    const Wp = 160, Hp = 96, c = document.createElement('canvas'); c.width = Wp; c.height = Hp;
+    const g = c.getContext('2d');
+    const lobes = Array.from({ length: 4 + Math.floor(rnd(v, 1) * 4) }, (_, i) => ({
+      x: Wp / 2 + (rnd(v, 10 + i) - 0.5) * 70, y: Hp / 2 + (rnd(v, 20 + i) - 0.5) * 30,
+      rx: 14 + rnd(v, 30 + i) * 26, ry: 8 + rnd(v, 40 + i) * 12, a: (rnd(v, 50 + i) - 0.5) * 0.8 }));
+    const blob = (grow) => { g.beginPath(); for (const l of lobes) { g.moveTo(l.x + l.rx + grow, l.y); g.ellipse(l.x, l.y, l.rx + grow, l.ry + grow, l.a, 0, Math.PI * 2); } };
+    // Wet-dark rim around the water (damp asphalt).
+    g.filter = 'blur(5px)'; g.fillStyle = 'rgba(150, 155, 165, 0.35)'; blob(6); g.fill();
+    // Water body.
+    g.filter = 'blur(2.5px)';
+    const body = g.createLinearGradient(0, 0, Wp, Hp);
+    body.addColorStop(0, 'rgba(165, 172, 184, 0.7)'); body.addColorStop(0.55, 'rgba(138, 144, 154, 0.75)'); body.addColorStop(1, 'rgba(128, 133, 142, 0.78)');
+    g.fillStyle = body; blob(0); g.fill();
+    // Sky reflection: soft light patch, clipped to the water.
+    g.save(); blob(0); g.clip(); g.filter = 'blur(6px)';
+    const sky = g.createRadialGradient(Wp * 0.38, Hp * 0.35, 2, Wp * 0.38, Hp * 0.35, 46);
+    sky.addColorStop(0, 'rgba(235, 240, 248, 0.5)'); sky.addColorStop(1, 'rgba(190, 205, 225, 0)');
+    g.fillStyle = sky; g.fillRect(0, 0, Wp, Hp); g.restore();
+    // Thin light edge on the far (bottom-right) side, as the game lights from the top-left.
+    g.save(); blob(0); g.clip(); g.filter = 'blur(0.6px)'; g.translate(-1.5, -1.5);
+    g.strokeStyle = 'rgba(245, 248, 252, 0.35)'; g.lineWidth = 1; blob(0); g.stroke(); g.restore();
+    g.filter = 'none';
+    out.push(c);
+  }
+  return out;
+})();
+const PUDDLES = (() => {
+  const rnd = (i, n) => { const s = Math.sin(i * 91.17 + n * 47.31) * 43758.5453; return s - Math.floor(s); };
+  // Every position any car drove through, on a 70-px grid: a cell is "track" if cars passed there.
+  const CELL = 70, cells = new Map();
+  for (const c of cars) for (let k = 0; k < total; k += 9) {
+    if (c.p[k] === NONE32) continue;
+    const p = posAt(c, k); if (!p) continue;
+    const key = Math.floor(p.x / CELL) + ',' + Math.floor(p.y / CELL);
+    const e = cells.get(key); if (e) e.n++; else cells.set(key, { n: 1, x: p.x, y: p.y, ang: p.ang });
+  }
+  const out = []; let i = 0;
+  for (const e of cells.values()) {
+    i++;
+    if (e.n < 6 || rnd(i, 1) > 0.33) continue; // only well-used racing surface
+    const a = e.ang * Math.PI / 180, side = (rnd(i, 2) - 0.5) * 24; // stay near where the cars ran
+    out.push({ x: e.x - Math.sin(a) * side, y: e.y + Math.cos(a) * side, rot: a + (rnd(i, 3) - 0.5) * 0.5,
+      s: 0.28 + rnd(i, 4) * 0.32, spr: Math.floor(rnd(i, 5) * PUDDLE_SPRITES.length), th: rnd(i, 6) * 0.85, seed: rnd(i, 7) * 100 });
+  }
+  return out;
+})();
+function drawPuddles(g, wx, sx, sy) {
+  const wet = wx.wet; if (wet <= 0) return;
+  const sec = t / HZ;
+  for (const pd of PUDDLES) {
+    const a = Math.min(1, (wet - pd.th) / 0.15); if (a <= 0) continue;
+    const X = sx(pd.x), Y = sy(pd.y); if (X < -80 || Y < -80 || X > W + 80 || Y > H + 80) continue;
+    const img = PUDDLE_SPRITES[pd.spr], sc = pd.s * zoom * (0.75 + 0.25 * a); // shrink as it dries
+    g.save(); g.translate(X, Y); g.rotate(pd.rot); g.scale(sc, sc);
+    // Multiply: the puddle darkens the asphalt underneath, keeping the game's texture visible.
+    g.globalCompositeOperation = 'multiply'; g.globalAlpha = 0.42 * a; g.drawImage(img, -img.width / 2, -img.height / 2);
+    g.globalCompositeOperation = 'source-over';
+    // Raindrop ripples on the water.
+    if (wx.rain > 0) {
+      g.globalAlpha = 0.5 * a * Math.min(1, wx.rain * 1.5); g.strokeStyle = 'rgba(215, 228, 245, 1)'; g.lineWidth = 1.2 / sc;
+      for (let j = 0; j < 3; j++) {
+        const ph = (sec * (0.9 + j * 0.23) + pd.seed + j * 0.37) % 1;
+        const rx = Math.sin(pd.seed * 3.1 + j * 7.7 + Math.floor(sec + pd.seed + j * 0.37)) * 30;
+        const ry = Math.cos(pd.seed * 1.7 + j * 5.3 + Math.floor(sec + pd.seed + j * 0.37)) * 10;
+        g.globalAlpha = 0.15 * a * (1 - ph) * Math.min(1, wx.rain * 1.5);
+        g.beginPath(); g.ellipse(rx, ry, 3 + ph * 14, 2 + ph * 8, 0, 0, Math.PI * 2); g.stroke();
+      }
+    }
+    g.restore();
+  }
+}
+// Spray: soft white puffs along the car's recent path, more with a wetter track and more speed.
+function drawSpray(g, c, wet, sx, sy) {
+  if (wet <= 0.05) return;
+  const p = posAt(c, tOf(c, t)); if (!p) return;
+  const sp = Math.min(1, (p.v || 0) / 450); if (sp < 0.15) return;
+  const amt = wet * sp;
+  for (let j = 1; j <= 10; j++) {
+    const q = posAt(c, tOf(c, t - j * 3)); if (!q) break;
+    const r = (7 + j * 3.5) * zoom, a = 0.5 * amt * (1 - j / 11);
+    const gr = g.createRadialGradient(sx(q.x), sy(q.y), 0, sx(q.x), sy(q.y), r);
+    gr.addColorStop(0, `rgba(225, 235, 245, ${a})`); gr.addColorStop(1, 'rgba(225, 235, 245, 0)');
+    g.fillStyle = gr; g.beginPath(); g.arc(sx(q.x), sy(q.y), r, 0, Math.PI * 2); g.fill();
+  }
+}
+
+function draw() {
+  const k = Math.min(total - 1, Math.floor(t));
+  const g = ctx; g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+  const f = cars.find(c => c.id === followId);
+  const fpNow = posAt(f, tOf(f, t));
+  const fp = fpNow || f.lastPos || { x: WORLD_W / 2, y: WORLD_H / 2 };
+  if (fpNow) f.lastPos = fp;
+  // Camera follows the driver but never shows past the edge of the map: near an edge it stops and the car moves off-centre.
+  zoom = Math.max(zoom, minZoom());
+  const halfW = W / 2 / zoom, halfH = H / 2 / zoom;
+  if (freeCam) { free.x = clampCam(free.x, halfW, WORLD_W); free.y = clampCam(free.y, halfH, WORLD_H); }
+  const camX = clampCam(freeCam ? free.x : fp.x, halfW, WORLD_W);
+  const camY = clampCam(freeCam ? free.y : fp.y, halfH, WORLD_H);
+  lastCam = { x: camX, y: camY };
+  const sx = wx => (wx - camX) * zoom + W / 2, sy = wy => (wy - camY) * zoom + H / 2;
+
+  g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
+  if (mapImg.complete) g.drawImage(mapImg, sx(0), sy(0), WORLD_W * zoom, WORLD_H * zoom);
+  const wx = weatherAt(t);
+  // Wet track: slightly darker ground plus puddles on the racing surface.
+  if (wx.wet > 0) { g.fillStyle = `rgba(20, 35, 60, ${0.12 * wx.wet})`; g.fillRect(sx(0), sy(0), WORLD_W * zoom, WORLD_H * zoom); }
+  drawPuddles(g, wx, sx, sy);
+  const now = {}; for (const c of cars) now[c.id] = posAt(c, tOf(c, t));
+  document.querySelector('.card').classList.toggle('freecam', freeCam);
+  const focusId = freeCam ? null : followId;
+  const dist = {}; for (const c of cars) dist[c.id] = raced(c, t);
+  const ref = freeCam ? Math.max(...cars.map(c => dist[c.id] ?? -Infinity)) : dist[followId];
+  // Qualifying: cars are invisible to each other in the game; only the followed one
+  // (in free cam: the last one followed) is solid.
+  const lapped = c => QUALI ? c.id !== followId : c.id !== focusId && ref != null && dist[c.id] != null && Math.abs(ref - dist[c.id]) > LAPPED_MARGIN * LAP;
+  // Lapped cars first so the cars that matter are drawn on top of them.
+  const top = QUALI ? followId : focusId;
+  const order = [...cars.filter(c => c.id !== top)].sort((a, b) => lapped(b) - lapped(a));
+  if (top) order.push(f);
+  for (const c of order) if (!QUALI || c.id === followId) drawSpray(g, c, wx.wet, sx, sy);
+  for (const c of order) {
+    const p = now[c.id], img = liveryOf(c); if (!p || !img?.complete) continue;
+    if (QUALI && c.id !== followId) continue; // invisible, as in the game
+    const ghost = lapped(c);
+    g.globalAlpha = ghost ? 0.35 : 1;
+    const len = CAR_LEN * zoom, wid = len * (img.naturalHeight / img.naturalWidth || 45 / 109);
+    g.save();
+    // Small ground shadow cast by the car's own shape, offset down-right as if lit from the top-left.
+    g.shadowColor = 'rgba(0, 0, 0, 0.45)'; g.shadowBlur = 3 * zoom; g.shadowOffsetX = 3 * zoom; g.shadowOffsetY = 4 * zoom;
+    g.translate(sx(p.x), sy(p.y)); g.rotate(p.ang * Math.PI / 180); g.drawImage(img, -len / 2, -wid / 2, len, wid); g.restore();
+    // Driver code above the car, white with a black outline so it reads on any background.
+    g.font = '700 13px "Titillium Web", "Arial Narrow", sans-serif'; g.textAlign = 'center';
+    g.lineJoin = 'round'; g.lineWidth = 3.5; g.strokeStyle = '#000'; g.strokeText(c.tla, sx(p.x), sy(p.y) - 16);
+    g.fillStyle = c.id === focusId ? '#ffcc33' : '#fff'; g.fillText(c.tla, sx(p.x), sy(p.y) - 16); g.textAlign = 'start';
+    g.globalAlpha = 1;
+  }
+  drawRain(g, wx, t / HZ);
+  const al = alertAt(k), pop = document.getElementById('wxAlert');
+  if (al) {
+    const [icon, name] = WEATHER_NAMES[al[1]] || [WX_ICONS.cloud, al[1].toUpperCase()];
+    setHTML('wxAlert', `<span class="ic">${icon}</span><span class="tx"><small>WEATHER FORECAST</small>${name} SOON</span>`);
+  }
+  pop.classList.toggle('show', !!al);
+
+  // Minimap
+  const mw = mini.width / dpr, mh = mini.height / dpr, mk = mw / DATA.mini.w;
+  const mx = wx => (wx * DATA.mini.s + DATA.mini.ox) * mk, my = wy => (wy * DATA.mini.s + DATA.mini.oy) * mk;
+  mctx.setTransform(dpr, 0, 0, dpr, 0, 0); mctx.clearRect(0, 0, mw, mh);
+  if (miniImg.complete) mctx.drawImage(miniImg, 0, 0, mw, mh);
+  for (const c of cars) {
+    const p = now[c.id]; if (!p) continue; const me = c.id === followId;
+    mctx.beginPath(); mctx.arc(mx(p.x), my(p.y), me ? 4.5 : 3, 0, Math.PI * 2);
+    mctx.fillStyle = me ? '#e10600' : colorOf(c); mctx.fill(); mctx.lineWidth = 1; mctx.strokeStyle = '#000'; mctx.stroke();
+  }
+
+  document.getElementById('seek').value = k;
+  document.getElementById('clock').innerHTML = `${fmt(t / HZ)} <small>/ ${fmt(total / HZ)}</small>`;
+
+  // Broadcast graphics: refreshed 10 times a second (like the TV graphics), and only the parts that changed.
+  const wall = performance.now();
+  if (playing && wall - lastHud < 100 && !hudDirty) return;
+  lastHud = wall; hudDirty = false;
+  const st = standings(k), lead = st[0];
+  if (QUALI) {
+    // Qualifying: the followed driver's lap (each car runs its own laps).
+    const m = st.find(o => o.c.id === followId);
+    setHTML('towerLap', !m || m.outLap ? 'OUT' : `${m.lap}<span>/${LAPS}</span>`);
+  } else {
+    const lap = lead ? lead.lap : 1;
+    // Race by time: the clock counts down; once it runs out, the lap count (final lap).
+    const left = DATA.duration ? DATA.duration - k / HZ : 0;
+    setHTML('towerLbl', left > 0 ? 'TIME' : 'LAP');
+    setHTML('towerLap', left > 0 ? `${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')}` : `${lap}<span>/${LAPS}</span>`);
+  }
+  document.querySelector('.tower').style.setProperty('--rows', st.length);
+  setHTML('rows', st.map(o =>
+    `<div class="trow${QUALI ? ' q' : ''}${o.c.id === followId ? ' me' : ''}${o.out ? ' out' : ''}${o.finished ? ' fin' : ''}"><span class="pos">${o.pos}</span><span class="tbar" style="background:${colorOf(o.c)}"></span><span class="tla">${o.c.tla}</span>${QUALI ? sectorBars(o, k) : ''}<span class="gap">${o.out ? 'OUT' : o.gap}</span>${tyreBadge(tyreAt(o.c.id, k)) || '<span></span>'}${o.finished ? '<span class="tag fin" title="Finished"></span>' : inPit(o.c.id, k) ? '<span class="tag pit" title="In the pit lane">P</span>' : ''}</div>`).join(''));
+  const me = st.find(o => o.c.id === followId);
+  document.getElementById('cardPos').textContent = me ? me.pos : '–';
+  document.getElementById('cardStripe').style.background = colorOf(f);
+  document.getElementById('cardName').textContent = f.name;
+  const cur = now[followId];
+  const ping = f.ping ? ` · ${f.ping} ms` : '';
+  const bestTxt = o => (isFinite(o.best) ? `best ${fmtLap(o.best)}` : 'no time yet');
+  if (QUALI) {
+    setHTML('cardSub', tyreBadge(tyreAt(followId, k)) + (!me ? 'Not on track'
+      : me.finished ? `🏁 Finished · ${bestTxt(me)}${ping}`
+      : !cur ? 'Not on track'
+      : me.outLap ? `Out lap · ${bestTxt(me)}${ping}`
+      : `Lap ${me.lap}/${LAPS} · ${fmtLap(me.running).replace(/(\.\d)\d\d$/, '$1')} · ${bestTxt(me)}${ping}`));
+    // Sectors of the lap in progress; after the last lap (or on the out lap) the last timed lap.
+    const lapShown = sectorLap(me);
+    setHTML('cardSecs', lapShown ? sectorBoxes(f, k, lapShown) : [1, 2, 3].map(j => `<span class="sec run"><small>S${j}</small><b>—</b></span>`).join(''));
+  }
+  else setHTML('cardSub', tyreBadge(tyreAt(followId, k)) + (me?.finished ? `🏁 Finished · ${me.pos > 1 ? me.gap + ' to P' + (me.pos - 1) : 'Winner'}${f.ping ? ` · ${f.ping} ms` : ''}` : cur ? `Lap ${me ? me.lap : '–'} · ${me && me.pos > 1 ? me.gap + ' to P' + (me.pos - 1) : 'Leader'}${f.ping ? ` · ${f.ping} ms` : ''}` : 'Not on track'));
+  // Speed readout: smoothed and refreshed 4 times a second so it can be read.
+  if (cur) f.vs = f.vs == null ? cur.v : f.vs + (cur.v - f.vs) * 0.35;
+  if (wall - lastSpeed >= 250 || !playing) { lastSpeed = wall; setHTML('cardSpeed', cur ? String(Math.round(f.vs)) : '—'); }
+  const li = liveryOf(f); if (li && document.getElementById('cardImg').src !== li.src) document.getElementById('cardImg').src = li.src;
+
+}
+let lastHud = 0, lastSpeed = 0, hudDirty = true;
+const htmlCache = {};
+function setHTML(id, html) { if (htmlCache[id] !== html) { htmlCache[id] = html; document.getElementById(id).innerHTML = html; } }
+
+function loop(ts) {
+  if (last !== null && playing) { t += (ts - last) / 1000 * HZ * speed; if (t >= total - 1) { t = total - 1; setPlaying(false); } }
+  last = ts; draw();
+  if (playing) requestAnimationFrame(loop); else last = null;
+}
+function setPlaying(on) {
+  playing = on; document.getElementById('play').textContent = on ? 'Pause' : 'Play';
+  if (on) { if (t >= total - 1) t = 0; requestAnimationFrame(loop); }
+}
+
+function renderDrivers() {
+  const el = document.getElementById('drivers'); el.innerHTML = '';
+  const fb = document.createElement('button'); fb.type = 'button'; fb.className = 'drv free';
+  fb.setAttribute('aria-pressed', freeCam ? 'true' : 'false'); fb.textContent = '🎥 Free cam';
+  fb.title = 'Free camera (C): drag the view, mouse wheel to zoom, WASD to move';
+  fb.onclick = () => setFreeCam(!freeCam);
+  el.append(fb);
+  for (const c of cars) {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'drv';
+    b.setAttribute('aria-pressed', !freeCam && c.id === followId ? 'true' : 'false');
+    b.innerHTML = `<img alt="" src="${slotSource(assign[c.id] ?? 0)}"><span>${c.name}</span>`;
+    b.onclick = () => { followId = c.id; freeCam = false; hudDirty = true; renderDrivers(); draw(); };
+    el.append(b);
+  }
+}
+function group(id, values, label, current, set) {
+  const el = document.getElementById(id);
+  for (const v of values) {
+    const b = document.createElement('button'); b.type = 'button'; b.textContent = label(v);
+    b.setAttribute('aria-pressed', v === current ? 'true' : 'false');
+    b.onclick = () => { set(v); for (const x of el.querySelectorAll('button')) x.setAttribute('aria-pressed', x === b ? 'true' : 'false'); draw(); };
+    el.append(b);
+  }
+}
+group('speeds', [0.5, 1, 2, 4], v => v + '×', 1, v => { speed = v; });
+group('zooms', ZOOMS, v => ['Far', 'Mid', 'Close'][ZOOMS.indexOf(v)], ZOOMS[2], v => { zoom = v; });
+if (QUALI) for (const el of document.querySelectorAll('#lagview, .lagkey')) el.style.display = 'none';
+else group('lagview', [true, false], v => (v ? 'As seen in game' : 'Raw'), true, v => { latency = v; lastOrder = []; hudDirty = true; });
+renderDrivers(); renderSlots(); renderAssign();
+
+const seek = document.getElementById('seek'); seek.max = total - 1;
+seek.oninput = () => { t = +seek.value; lastOrder = []; hudDirty = true; draw(); };
+document.getElementById('play').onclick = () => setPlaying(!playing);
+document.getElementById('meta').textContent = `${DATA.trackName || 'Race'} · ${cars.length} drivers · ${DATA.duration ? `${fmt(DATA.duration).replace(/\.0$/, '')} race, ${LAPS} laps` : `${LAPS} ${QUALI ? 'qualifying ' : ''}lap${LAPS === 1 ? '' : 's'}`} · 60 samples/s`;
+if (QUALI) {
+  document.querySelector('.card').classList.add('quali');
+  document.querySelector('.tower').classList.add('quali');
+  document.querySelector('header h1').innerHTML = 'Qualifying <span>Replay</span>';
+  document.getElementById('note').textContent = "Positions are recorded at 60 per second from the lobby traffic and synced to the session clock. The order is by best lap, using the game's own lap times; the running lap time on the driver card is worked out from the replay, so it can differ by a few tenths.";
+}
+
+// ---- Keyboard shortcuts (press ? for the list)
+const keysPanel = document.getElementById('keys');
+keysPanel.onclick = e => { if (e.target === keysPanel) keysPanel.classList.remove('open'); };
+
+function jumpTo(frame) {
+  t = Math.max(0, Math.min(total - 1, frame));
+  lastOrder = []; hudDirty = true; draw();
+}
+function follow(id) {
+  if (!id || (id === followId && !freeCam)) return;
+  followId = id; freeCam = false; hudDirty = true; renderDrivers(); draw();
+}
+// Presses the button of a control group, so the buttons stay in sync with the keys.
+function pressGroup(groupId, step) {
+  const btns = [...document.querySelectorAll('#' + groupId + ' button')];
+  const cur = btns.findIndex(b => b.getAttribute('aria-pressed') === 'true');
+  const next = step === 'cycle' ? (cur + 1) % btns.length : Math.max(0, Math.min(btns.length - 1, cur + step));
+  if (next !== cur) btns[next].click();
+}
+function order() { if (!lastOrder.length) draw(); return lastOrder; }
+
+document.addEventListener('keydown', e => {
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const tag = e.target.tagName;
+  // Typing in a field (livery editor) shouldn't trigger shortcuts; the seek bar is fine.
+  if ((tag === 'INPUT' && e.target.type !== 'range') || tag === 'SELECT' || tag === 'TEXTAREA') return;
+
+  const k = e.key;
+  let handled = true;
+  if (k === '?') keysPanel.classList.toggle('open');
+  else if (k === 'Escape') keysPanel.classList.remove('open');
+  else if (k === ' ' || k === 'k' || k === 'K') setPlaying(!playing);
+  else if (k === 'ArrowLeft' || k === 'j' || k === 'J') jumpTo(t - (e.shiftKey && k === 'ArrowLeft' ? 1 : 10) * HZ);
+  else if (k === 'ArrowRight' || k === 'l' || k === 'L') jumpTo(t + (e.shiftKey && k === 'ArrowRight' ? 1 : 10) * HZ);
+  else if (k === ',') { setPlaying(false); jumpTo(Math.round(t) - 1); }
+  else if (k === '.') { setPlaying(false); jumpTo(Math.round(t) + 1); }
+  else if (k === 'Home') jumpTo(0);
+  else if (k === 'End') jumpTo(total - 1);
+  else if (k === 'ArrowUp' || k === 'ArrowDown') {
+    const o = order(), i = o.indexOf(followId);
+    follow(o[i + (k === 'ArrowUp' ? -1 : 1)]);
+  }
+  else if (/^[0-9]$/.test(k)) follow(order()[k === '0' ? 9 : Number(k) - 1]);
+  else if (k === '-' || k === '_') pressGroup('speeds', -1);
+  else if (k === '+' || k === '=') pressGroup('speeds', 1);
+  else if (k === 'z' || k === 'Z') pressGroup('zooms', 'cycle');
+  else if ((k === 'v' || k === 'V') && !QUALI) pressGroup('lagview', 'cycle');
+  else if (k === 'm' || k === 'M') mini.style.visibility = mini.style.visibility === 'hidden' ? '' : 'hidden';
+  else if (k === 'h' || k === 'H') for (const el of document.querySelectorAll('.tv')) el.style.visibility = el.style.visibility === 'hidden' ? '' : 'hidden';
+  else if (k === 'f' || k === 'F') {
+    const v = document.querySelector('.view');
+    if (document.fullscreenElement) document.exitFullscreen(); else v.requestFullscreen?.();
+  }
+  else handled = false;
+  if (handled) e.preventDefault();
+});
+
+// ---- Free cam: drag to pan (switches to free cam), wheel to zoom
+{
+  const view = document.querySelector('.view');
+  let drag = null;
+  cv.addEventListener('pointerdown', e => {
+    if (e.button !== 0) return;
+    if (!freeCam) setFreeCam(true);
+    drag = { x: e.clientX, y: e.clientY }; cv.setPointerCapture(e.pointerId); view.classList.add('panning');
+  });
+  cv.addEventListener('pointermove', e => {
+    if (!drag) return;
+    free.x -= (e.clientX - drag.x) / zoom; free.y -= (e.clientY - drag.y) / zoom;
+    drag = { x: e.clientX, y: e.clientY }; draw();
+  });
+  const endDrag = () => { drag = null; view.classList.remove('panning'); };
+  cv.addEventListener('pointerup', endDrag); cv.addEventListener('pointercancel', endDrag);
+  cv.addEventListener('wheel', e => {
+    e.preventDefault();
+    zoom = Math.min(2, Math.max(minZoom(), zoom * (e.deltaY < 0 ? 1.15 : 1 / 1.15)));
+    for (const b of document.querySelectorAll('#zooms button')) b.setAttribute('aria-pressed', 'false');
+    draw();
+  }, { passive: false });
+}
+document.addEventListener('keydown', e => {
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const tag = e.target.tagName;
+  if ((tag === 'INPUT' && e.target.type !== 'range') || tag === 'SELECT' || tag === 'TEXTAREA') return;
+  const k = e.key.toLowerCase();
+  if (k === 'c') { setFreeCam(!freeCam); e.preventDefault(); return; }
+  const step = 300 / zoom; // world px per key press
+  const move = { w: [0, -1], a: [-1, 0], s: [0, 1], d: [1, 0] }[k];
+  if (move) {
+    if (!freeCam) setFreeCam(true);
+    free.x += move[0] * step; free.y += move[1] * step; draw(); e.preventDefault();
+  }
+});
+
+// ---- Full-quality track image (loaded by the viewer, not stored)
+{
+  const id = String(DATA.track || '');
+  // Old "Road Course FA" tracks come in two halves (no single track.png to load).
+  if (id.startsWith('original/')) document.getElementById('trackq').hidden = true;
+  document.getElementById('trackPath').textContent = /^\d+$/.test(id)
+    ? `steamapps/workshop/content/1285230/${id}/track.png`
+    : `steamapps/common/Ultimate Racing 2D 2/tracks/${id}/track.png`;
+  document.getElementById('mapFile').onchange = e => {
+    const file = e.target.files[0], note = document.getElementById('mapNote');
+    if (!file) return;
+    const img = new Image();
+    img.onload = () => {
+      // Same shape as this track's world, or it's another track's image.
+      if (Math.abs(img.naturalWidth / img.naturalHeight - WORLD_W / WORLD_H) > 0.02 * (WORLD_W / WORLD_H)) {
+        note.textContent = "That image isn't this track (different size).";
+        return;
+      }
+      mapImg.src = img.src;
+      note.textContent = `Full quality loaded (${img.naturalWidth} × ${img.naturalHeight}).`;
+    };
+    img.onerror = () => { note.textContent = "Couldn't read that image."; };
+    img.src = URL.createObjectURL(file);
+  };
+}
+
+// Open at the start of the race.
+t = 0;
+mapImg.onload = draw; miniImg.onload = draw;
+new ResizeObserver(resize).observe(cv);
+</script>
+
+</body>
+</html>
