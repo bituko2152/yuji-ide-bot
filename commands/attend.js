@@ -22,7 +22,7 @@ module.exports = {
         if (!cat) return interaction.respond([]);
 
         const focused = interaction.options.getFocused().toLowerCase();
-        const choices = S.teamsOf(cat, config).map(t => ({ name: t.nombre, value: t.roleId }));
+        const choices = S.teamsOf(cat, config).map(t => ({ name: t.name, value: t.roleId }));
         choices.push({ name: 'Independent', value: 'independent' });
 
         return interaction.respond(
@@ -41,9 +41,9 @@ module.exports = {
             return interaction.editReply('❌ This command can only be used in a league\'s starters channel.');
         }
 
-        const playerRoleId = config.roles_liga_jugador?.[cat];
+        const playerRoleId = config.league_driver_roles?.[cat];
         if (!playerRoleId || playerRoleId === '???') {
-            return interaction.editReply(`❌ The driver role for **${cat}** isn't configured (roles_liga_jugador in config.json).`);
+            return interaction.editReply(`❌ The driver role for **${cat}** isn't configured (league_driver_roles in config.json).`);
         }
         if (!member.roles.cache.has(playerRoleId)) {
             return interaction.editReply(`❌ You need the **${cat}** driver role to sign up.`);
@@ -61,8 +61,8 @@ module.exports = {
             return interaction.editReply('❌ Pick your team (or Independent) in the `team` option.');
         }
         const isIndependent = target === 'independent';
-        const team = isIndependent ? null : config.roles_equipos[target];
-        if (!isIndependent && (!team || team.categoria !== cat)) {
+        const team = isIndependent ? null : config.team_roles[target];
+        if (!isIndependent && (!team || team.league !== cat)) {
             return interaction.editReply('❌ That team is not valid for this league.');
         }
 

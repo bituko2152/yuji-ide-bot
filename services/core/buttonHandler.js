@@ -2,6 +2,7 @@ const { EmbedBuilder } = require('discord.js');
 const contractStore = require('../contracts/contractStore');
 const { handleReportComponent, isReportComponent } = require('../reports/reportService');
 const { handleStarterButton } = require('../starters/starterService');
+const { handleRaceCheckButton } = require('../racecheck/raceCheckService');
 const { handleUploadComponent, isUploadComponent } = require('../results/resultsUpload');
 
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
@@ -69,6 +70,10 @@ async function handleButtonInteraction(interaction) {
     }
     if (interaction.customId.startsWith('starter_')) {
         await handleStarterButton(interaction);
+        return true;
+    }
+    if (interaction.customId.startsWith('racecheck_')) {
+        await handleRaceCheckButton(interaction);
         return true;
     }
     if (isUploadComponent(interaction.customId)) {

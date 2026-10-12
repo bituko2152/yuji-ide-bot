@@ -140,7 +140,7 @@ function renderBoard({ roundName, teams, independentSlots, round }) {
 
     const blocks = teams.map(t => ({
         kind: 'team',
-        title: t.nombre,
+        title: t.name,
         color: t.color || '#888888',
         rows: [0, 1].map(i => round.teams[t.roleId]?.[i]?.name ?? null)
     }));

@@ -51,6 +51,10 @@ const {
 } = require('./services/starters/starterService');
 
 const {
+    startRaceCheckLoop
+} = require('./services/racecheck/raceCheckService');
+
+const {
     startResultsLoop,
     stopAll: stopListeningAll
 } = require('./services/results/resultsWatcher');
@@ -141,6 +145,20 @@ client.once('clientReady', async () => {
         console.error(error);
     }
 
+    // Other servers (e.g. the mobile one) only get the commands listed for
+    // them in config.json "extra_servers": [{ "id", "commands": [...] }].
+    const extraServers = JSON.parse(fs.readFileSync(path.join(__dirname, 'config.json'), 'utf-8')).extra_servers || [];
+    for (const server of extraServers) {
+        if (!server.id) continue;
+        const body = commandsArray.filter(c => (server.commands || []).includes(c.name));
+        try {
+            await rest.put(Routes.applicationGuildCommands(process.env.CLIENT_ID, server.id), { body });
+            console.log(`✅ ${body.length} slash command(s) registered in server ${server.id}.`);
+        } catch (error) {
+            console.error(`❌ Could not register commands in server ${server.id}:`, error.message);
+        }
+    }
+
     // Live list of online lobbies (queries the game's master servers directly).
     startLobbyLoop(client);
 
@@ -158,6 +176,9 @@ client.once('clientReady', async () => {
 
     // Weekly starters (open/close rounds) + auto-advance of the /report round.
     startStarterLoop(client);
+
+    // Weekly anonymous race checks (e.g. OMRL on the mobile server).
+    startRaceCheckLoop(client);
 
     // Stops /results listeners once their lobby closes.
     startResultsLoop(client);

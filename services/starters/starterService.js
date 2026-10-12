@@ -21,8 +21,8 @@ function categoryFromChannel(channelId, config) {
 }
 
 function teamsOf(cat, config) {
-    return Object.entries(config.roles_equipos || {})
-        .filter(([, t]) => t.categoria === cat)
+    return Object.entries(config.team_roles || {})
+        .filter(([, t]) => t.league === cat)
         .map(([roleId, t]) => ({ roleId, ...t }));
 }
 
@@ -36,7 +36,7 @@ function isOpen(round) {
 
 // TO of a team = league manager role + that team's role, at the same time.
 function isTO(member, teamRoleId, cat, config) {
-    const managerRoleId = config.roles_liga_manager?.[cat];
+    const managerRoleId = config.league_manager_roles?.[cat];
     if (!managerRoleId || managerRoleId === '???') return false;
     return member.roles.cache.has(managerRoleId) && member.roles.cache.has(teamRoleId);
 }
@@ -50,14 +50,14 @@ function canManage(member, config) {
 }
 
 function targetLabel(target, config) {
-    return target === 'independent' ? 'Independent' : (config.roles_equipos[target]?.nombre ?? '???');
+    return target === 'independent' ? 'Independent' : (config.team_roles[target]?.name ?? '???');
 }
 
 const MEMBERS_FETCH_COOLDOWN_MS = 10 * 60 * 1000;
 const lastMembersFetch = new Map();
 
 async function getTeamOwners(guild, teamRoleId, cat, config) {
-    const managerRoleId = config.roles_liga_manager?.[cat];
+    const managerRoleId = config.league_manager_roles?.[cat];
     if (!managerRoleId || managerRoleId === '???') return [];
 
     const find = () => {
@@ -125,7 +125,7 @@ function removeUser(cat, userId) {
 // ---------------------------------------------------------------- board message
 
 function leagueRoleMention(cat, config) {
-    const id = config.roles_liga_jugador?.[cat];
+    const id = config.league_driver_roles?.[cat];
     return id && id !== '???' ? `<@&${id}>` : '';
 }
 
@@ -288,7 +288,7 @@ async function openRound(client, cat, win, config) {
     };
 
     // Send first, persist after: if sending fails, the next tick retries.
-    const roleId = config.roles_liga_jugador?.[cat];
+    const roleId = config.league_driver_roles?.[cat];
     const hasRole = roleId && roleId !== '???';
     const message = await channel.send({
         content: buildContent(round, false, leagueRoleMention(cat, config)),
@@ -363,7 +363,7 @@ async function syncReports(client, config) {
                     .setDescription(`Incident reports are open for the races that were just run:\n\n${lines.join('\n')}\n\nUse \`/report\` to submit your incident.`)
                     .setTimestamp();
                 // Ping every category's league role, not just the ones that raced.
-                const roleIds = Object.values(config.roles_liga_jugador || {}).filter(id => id && id !== '???');
+                const roleIds = Object.values(config.league_driver_roles || {}).filter(id => id && id !== '???');
                 await channel.send({
                     content: roleIds.map(id => `<@&${id}>`).join(' ') || undefined,
                     embeds: [embed],

@@ -9,12 +9,12 @@ function loadConfig() {
 }
 
 /**
- * Returns the list of team roles (from config.roles_equipos) that this
+ * Returns the list of team roles (from config.team_roles) that this
  * member actually holds, so they can only offer for team(s) their own
  * manager role represents.
  */
 function getManagedTeamRoles(member, config) {
-    return Object.entries(config.roles_equipos)
+    return Object.entries(config.team_roles)
         .filter(([roleId]) => member.roles.cache.has(roleId))
         .map(([roleId, info]) => ({ roleId, ...info }));
 }
@@ -24,7 +24,7 @@ module.exports = {
         .setName('offercontract')
         .setDescription('Offer a driver contract for your team to a server member')
         .addUserOption(opt => opt.setName('driver').setDescription('Player to offer the contract to').setRequired(true))
-        .addStringOption(opt => opt.setName('seat').setDescription('Seat type (display only — does not change the role granted)').setRequired(true)
+        .addStringOption(opt => opt.setName('seat').setDescription('Seat type').setRequired(true)
             .addChoices(
                 { name: 'Main Seat', value: 'main' },
                 { name: 'Reserve Seat', value: 'reserve' }
@@ -44,12 +44,12 @@ module.exports = {
         // The league is determined by the CHANNEL the command is run in,
         // not by "the first team role the manager happens to have" — this
         // avoids issues with managers who hold roles for several teams/leagues.
-        const leagueChannels = config.canales_liga || {};
+        const leagueChannels = config.league_channels || {};
         const categoria = Object.entries(leagueChannels).find(([, chId]) => chId === interaction.channelId)?.[0];
 
         if (!categoria) {
             return interaction.reply({
-                content: '❌ This command can only be used in your league\'s designated channel (UL/CL/JL/AL). Use /offercontract in the right channel.',
+                content: '❌ This command can only be used in your league\'s designated channel. Use /offercontract in the right channel.',
                 ephemeral: true
             });
         }
@@ -64,7 +64,7 @@ module.exports = {
 
         // Among the teams this manager holds, keep only the one(s) that
         // belong to this channel's league.
-        const teamsInThisLeague = managedTeams.filter(t => t.categoria === categoria);
+        const teamsInThisLeague = managedTeams.filter(t => t.league === categoria);
         if (teamsInThisLeague.length === 0) {
             return interaction.reply({
                 content: `❌ None of your teams belong to the **${categoria}** league, so you can't offer here.`,
@@ -73,14 +73,14 @@ module.exports = {
         }
         if (teamsInThisLeague.length > 1) {
             return interaction.reply({
-                content: `⚠️ You have several teams in the **${categoria}** league (${teamsInThisLeague.map(t => t.nombre).join(', ')}). Contact an admin to fix this configuration before offering.`,
+                content: `⚠️ You have several teams in the **${categoria}** league (${teamsInThisLeague.map(t => t.name).join(', ')}). Contact an admin to fix this configuration before offering.`,
                 ephemeral: true
             });
         }
 
         const team = teamsInThisLeague[0];
 
-        const ligaManagerRoleId = config.roles_liga_manager?.[categoria];
+        const ligaManagerRoleId = config.league_manager_roles?.[categoria];
         if (ligaManagerRoleId && !member.roles.cache.has(ligaManagerRoleId)) {
             return interaction.reply({
                 content: `❌ Your team role belongs to the **${categoria}** category, but you don't have the manager role for that league.`,
@@ -88,10 +88,10 @@ module.exports = {
             });
         }
 
-        const ligaJugadorRoleId = config.roles_liga_jugador?.[categoria];
+        const ligaJugadorRoleId = config.league_driver_roles?.[categoria];
         if (!ligaJugadorRoleId || ligaJugadorRoleId === '???') {
             return interaction.reply({
-                content: `❌ The player role for the **${categoria}** category isn't configured (roles_liga_jugador in config.json).`,
+                content: `❌ The player role for the **${categoria}** category isn't configured (league_driver_roles in config.json).`,
                 ephemeral: true
             });
         }
@@ -110,7 +110,7 @@ module.exports = {
             .setTitle('🏎️ Driver Contract Offer')
             .setThumbnail(target.displayAvatarURL({ dynamic: true, size: 256 }))
             .setDescription(
-                `${target} has received an offer to join **${team.nombre}** (${categoria}) as **${seatLabel}**.\n\n` +
+                `${target} has received an offer to join **${team.name}** (${categoria}) as **${seatLabel}**.\n\n` +
                 `Offered by: ${interaction.user}\n` +
                 `Once accepted, after **24 hours** you will automatically be granted the team role and the **${categoria}** league role.`
             )
@@ -133,11 +133,13 @@ module.exports = {
             fromUserId: interaction.user.id,
             toUserId: target.id,
             teamRoleId: team.roleId,
-            teamName: team.nombre,
+            teamName: team.name,
             seatType,
             seatLabel,
             categoria,
             ligaRoleId: ligaJugadorRoleId,
+            // Leagues with separate main / reserve roles (config seat_roles).
+            seatRoleId: config.seat_roles?.[categoria]?.[seatType] || null,
             status: 'pending',
             createdAt: Date.now(),
             acceptedAt: null,
@@ -145,6 +147,6 @@ module.exports = {
             granted: false
         });
 
-        return interaction.reply({ content: `✅ ${seatLabel} offer sent to ${target} for **${team.nombre}**.`, ephemeral: true });
+        return interaction.reply({ content: `✅ ${seatLabel} offer sent to ${target} for **${team.name}**.`, ephemeral: true });
     }
 };

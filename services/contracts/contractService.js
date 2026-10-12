@@ -20,14 +20,20 @@ async function grantContract(client, contract) {
     // only — someone competing in two leagues at once (e.g. UL and HL)
     // must keep their team role in the other league untouched.
     const config = loadConfig();
-    const sameLeagueTeamRoleIds = Object.entries(config.roles_equipos)
-        .filter(([, info]) => info.categoria === contract.categoria)
+    const sameLeagueTeamRoleIds = Object.entries(config.team_roles)
+        .filter(([, info]) => info.league === contract.categoria)
         .map(([roleId]) => roleId);
 
     const rolesToRemove = sameLeagueTeamRoleIds.filter(id => id !== contract.teamRoleId && member.roles.cache.has(id));
     if (rolesToRemove.length) {
         await member.roles.remove(rolesToRemove).catch(err => console.error('❌ [Contracts] Error removing old roles:', err.message));
     }
+
+    // Leagues with separate main / reserve roles: the seat's role, and not the other one.
+    const seatRoles = Object.values(config.seat_roles?.[contract.categoria] || {}).filter(Boolean);
+    const otherSeats = seatRoles.filter(id => id !== contract.seatRoleId && member.roles.cache.has(id));
+    if (otherSeats.length) await member.roles.remove(otherSeats).catch(err => console.error('❌ [Contracts] Error removing seat role:', err.message));
+    if (contract.seatRoleId) await member.roles.add(contract.seatRoleId).catch(err => console.error('❌ [Contracts] Error adding seat role:', err.message));
 
     await member.roles.add(contract.teamRoleId).catch(err => console.error('❌ [Contracts] Error adding team role:', err.message));
     await member.roles.add(contract.ligaRoleId).catch(err => console.error('❌ [Contracts] Error adding league role:', err.message));
@@ -40,7 +46,7 @@ async function grantContract(client, contract) {
     // ...and also post publicly in the original channel, so everyone can see it went through.
     const channel = await guild.channels.fetch(contract.channelId).catch(() => null);
     if (channel) {
-        const teamInfo = config.roles_equipos[contract.teamRoleId];
+        const teamInfo = config.team_roles[contract.teamRoleId];
         const teamColor = teamInfo?.color || '#2ecc71';
 
         const embed = new EmbedBuilder()
