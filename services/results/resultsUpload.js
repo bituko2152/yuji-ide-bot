@@ -24,7 +24,7 @@ const starterStore = require('../starters/starterStore');
  *    aliases on confirm.
  *  - Team from that round's starters (/attend): the starter whose name
  *    matches the driver (CSV name, DB name or alias); team role -> config
- *    roles_equipos code -> teams.short_name (or team_aliases). Independents
+ *    team_roles code -> teams.short_name (or team_aliases). Independents
  *    get no team. Anyone not in the starters is asked in the preview.
  *    Leagues without team roles (AL) are all independent.
  */
@@ -252,10 +252,10 @@ function loadStarters({ league, season, round, division, teams, teamAliases }) {
     };
     // Team role id -> { id, label } for this league.
     const leagueTeams = {};
-    for (const [roleId, t] of Object.entries(config.roles_equipos || {})) {
-        if (t.categoria !== code) continue;
-        const row = dbTeam(t.nombre);
-        leagueTeams[roleId] = { id: row?.id ?? null, label: t.nombre, missing: !row };
+    for (const [roleId, t] of Object.entries(config.team_roles || {})) {
+        if (t.league !== code) continue;
+        const row = dbTeam(t.name);
+        leagueTeams[roleId] = { id: row?.id ?? null, label: t.name, missing: !row };
     }
 
     // That round's starters: this week's, or archived when the next week opened.
