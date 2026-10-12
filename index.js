@@ -31,10 +31,6 @@ const {
 } = require('./services/steam/lobbyService');
 
 const {
-    startWorkshopLoop
-} = require('./services/steam/workshopService');
-
-const {
     startNewsLoop
 } = require('./services/steam/newsService');
 
@@ -55,13 +51,15 @@ const {
 } = require('./services/starters/starterService');
 
 const {
-    startResultsLoop
+    startResultsLoop,
+    stopAll: stopListeningAll
 } = require('./services/results/resultsWatcher');
 
 const {
     handleReportComponent,
     isReportComponent,
-    migrateOldPolls
+    migrateOldPolls,
+    recoverLostPolls
 } = require('./services/reports/reportService');
 
 const {
@@ -146,9 +144,6 @@ client.once('clientReady', async () => {
     // Live list of online lobbies (queries the game's master servers directly).
     startLobbyLoop(client);
 
-    // Announces new Steam Workshop tracks (tracks only, no car classes).
-    startWorkshopLoop(client);
-
     // Announces the developer's Steam news posts (patches, updates).
     startNewsLoop(client);
 
@@ -169,6 +164,9 @@ client.once('clientReady', async () => {
 
     // Reports of the current rounds still on the old poll -> S26 penalty system.
     migrateOldPolls(client).catch(err => console.error('❌ [Reports] Poll migration failed:', err.message));
+
+    // Report messages whose poll was lost from data/polls.json get it back.
+    recoverLostPolls(client).catch(err => console.error('❌ [Reports] Poll recovery failed:', err.message));
 });
 
 // Handle commands and buttons
@@ -243,7 +241,7 @@ client.on('interactionCreate', async interaction => {
     /*
      * Handle /results upload preview dropdowns (who is each unknown driver)
      */
-    if (interaction.isStringSelectMenu() && isUploadComponent(interaction.customId)) {
+    if ((interaction.isStringSelectMenu() || interaction.isModalSubmit()) && isUploadComponent(interaction.customId)) {
         await handleUploadComponent(interaction).catch(error => {
             console.error('❌ Error handling results upload interaction:', error);
         });
@@ -289,6 +287,15 @@ client.on('interactionCreate', async interaction => {
         }
     }
 });
+
+// On stop/restart, leave the lobbies being listened to (otherwise the lobby keeps
+// a ghost connection that counts as a player until it times out).
+for (const signal of ['SIGTERM', 'SIGINT']) {
+    process.once(signal, () => {
+        stopListeningAll();
+        setTimeout(() => process.exit(0), 700);
+    });
+}
 
 // Login using the existing environment variable
 client.login(process.env.DISCORD_TOKEN);

@@ -31,11 +31,32 @@ function getRound(cat) {
     return readAll()[cat] || null;
 }
 
+const HISTORY_KEEP = 40; // rounds kept (all categories)
+
 function setRound(cat, round) {
     const all = readAll();
+    // A new week replaces the previous round: keep who raced it (for
+    // /results upload, which can run after the next week has opened).
+    const prev = all[cat];
+    if (prev?.roundName && prev.roundName !== round.roundName) {
+        all._history ||= {};
+        all._history[prev.roundName] = { roundName: prev.roundName, teams: prev.teams || {}, independents: prev.independents || [], savedAt: Date.now() };
+        const names = Object.keys(all._history).sort((a, b) => all._history[a].savedAt - all._history[b].savedAt);
+        for (const n of names.slice(0, Math.max(0, names.length - HISTORY_KEEP))) delete all._history[n];
+    }
     all[cat] = round;
     writeAll(all);
     return round;
+}
+
+/** Starters of a round by name ("ULS26R2"): the current week's, or an archived one. */
+function getRoundByName(roundName) {
+    const all = readAll();
+    const norm = s => String(s || '').toUpperCase();
+    const current = Object.entries(all).find(([k, r]) => !k.startsWith('_') && norm(r?.roundName) === norm(roundName));
+    if (current) return current[1];
+    const old = Object.values(all._history || {}).find(r => norm(r.roundName) === norm(roundName));
+    return old || null;
 }
 
 // Synchronous read-modify-write: safe in Node's single thread as long as
@@ -60,4 +81,4 @@ function setMeta(meta) {
     writeAll(all);
 }
 
-module.exports = { getRound, setRound, updateRound, getMeta, setMeta };
+module.exports = { getRound, getRoundByName, setRound, updateRound, getMeta, setMeta };

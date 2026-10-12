@@ -3,6 +3,9 @@ const path = require('path');
 const dgram = require('dgram');
 const { AttachmentBuilder } = require('discord.js');
 const { fetchLobbies } = require('../steam/lobbyService');
+const { RaceRecorder } = require('../replay/recorder');
+const { buildReplayData } = require('../replay/builder');
+const { renderReplay } = require('../replay/render');
 
 /*
  * League results: /results listen follows an online lobby and posts each
@@ -89,6 +92,7 @@ function watch(client, lobby, channelId) {
     const socket = dgram.createSocket('udp4');
     const tables = new Map();   // session -> { rows: Map(index -> row), timer }
     const posted = new Set();   // signatures of tables already posted (resends)
+    const recorder = new RaceRecorder(); // positions, tyres, pits, weather for the replay
     let seq = 0;
 
     const raw = fields => socket.send(Buffer.from(fields.map(f => `${f}\n\0`).join(''), 'utf-8'), PORT, lobby.host);
@@ -110,9 +114,30 @@ function watch(client, lobby, channelId) {
         const channel = await client.channels.fetch(channelId).catch(() => null);
         if (!channel) return console.warn(`⚠️ [Results] Channel ${channelId} not found.`);
 
-        const fileName = `${lobby.name.replace(/[^\w-]+/g, '_')}_${isRace ? 'race' : 'qualifying'}.csv`;
+        const base = lobby.name.replace(/[^\w-]+/g, '_');
+        const fileName = `${base}_${isRace ? 'race' : 'qualifying'}.csv`;
         await channel.send({ files: [new AttachmentBuilder(Buffer.from(csv, 'utf-8'), { name: fileName })] })
             .catch(err => console.error('❌ [Results]', err.message));
+        if (!isRace) return;
+        // The replay goes in its own message right after the CSV (which is left untouched).
+        const msg = await channel.send('🎬 Generating the race replay…').catch(err => console.error('❌ [Results]', err.message));
+        if (msg) await attachReplay(msg, base);
+    }
+
+    async function attachReplay(msg, base) {
+        try {
+            console.log(`🎬 [Replay] ${lobby.name}: ${recorder.summary()}`);
+            const why = recorder.whyNoReplay();
+            const data = why ? null : buildReplayData(recorder);
+            if (!data) return void await msg.edit({ content: `⚠️ No replay: ${why || 'couldn\'t find a full lap in the recording.'}` });
+            const { html, trackName } = await renderReplay(data, { lobbyName: lobby.name });
+            const plain = trackName.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w-]+/g, '_');
+            const name = `${base}_${plain}_replay.html`;
+            await msg.edit({ content: '', files: [new AttachmentBuilder(Buffer.from(html, 'utf-8'), { name })] });
+        } catch (err) {
+            console.error('❌ [Results] Replay:', err);
+            await msg.edit({ content: `⚠️ Couldn't create the replay: ${err.message}` }).catch(() => { });
+        }
     }
 
     socket.on('message', msg => {
@@ -121,6 +146,7 @@ function watch(client, lobby, channelId) {
         if (m[2] === '1') socket.send(Buffer.from(`ack\n2\n${m[3]}\n\0`, 'latin1'), PORT, lobby.host);
 
         const f = m[1].replace(/\|$/, '').split('|');
+        recorder.onMessage(f, m[2] === '1' ? m[3] : null);
         if (f[0] !== '3' || f[1] !== '2' || f.length < 15) return;
 
         const session = f[2];
@@ -208,8 +234,13 @@ async function tick(client) {
     }
 }
 
+// Leave every lobby (on shutdown/restart), so no ghost connection is left behind.
+function stopAll() {
+    for (const w of [...watching.values()]) w.stop();
+}
+
 function startResultsLoop(client) {
     setInterval(() => tick(client).catch(err => console.error('❌ [Results] Tick failed:', err.message)), TICK_MS);
 }
 
-module.exports = { startResultsLoop, buildCsv, listLobbies, seenLobby, lobbyKey, isWatching, listen, stopListening, watching };
+module.exports = { startResultsLoop, stopAll, buildCsv, listLobbies, seenLobby, lobbyKey, isWatching, listen, stopListening, watching };

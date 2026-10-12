@@ -185,13 +185,15 @@ async function handleVotersButton(interaction) {
     const poll = pollStore.getPoll(interaction.message.id);
     if (!poll?.voters) return interaction.reply({ content: '⚠️ This report is closed or too old.', ephemeral: true });
 
-    const lines = Object.entries(poll.voters).map(([uid, v]) => {
+    const entries = Object.entries(poll.voters);
+    const earlier = entries.filter(([uid]) => uid.startsWith(EARLIER)).length;
+    const lines = entries.filter(([uid]) => !uid.startsWith(EARLIER)).map(([uid, v]) => {
         const l = level(v.level);
         const t = l && validType(l, v.type) ? ` · ${type(v.type).label}` : (needsType(l) ? ' · (no type)' : '');
         return `<@${uid}> → **${l ? l.label : '(no level)'}${t}**`;
     });
     const embed = new EmbedBuilder().setColor('#5865F2').setTitle('👁️ Voters for this report')
-        .setDescription(lines.length ? lines.join('\n') : 'No votes yet.');
+        .setDescription([...lines, ...(earlier ? [`+ ${earlier} earlier vote${earlier > 1 ? 's' : ''} (restored, voters unknown)`] : [])].join('\n') || 'No votes yet.');
 
     // Visible to everyone in the thread, without pinging the voters.
     const thread = poll.threadId ? await interaction.guild.channels.fetch(poll.threadId).catch(() => null) : null;
@@ -375,6 +377,88 @@ async function migrateOldPolls(client) {
     }
 }
 
+// ---------------------------------------------------------------- recovery
+
+// Votes restored from the tally shown in the message ("Level 2 ×2 (Time 1 ·
+// Position 1)"): who voted isn't known, so they're kept as anonymous voters
+// "earlier:<n>". They count in the tally and for the most voted result.
+const EARLIER = 'earlier:';
+const RECOVER_DAYS = 15;
+function votersFromTally(text) {
+    const voters = {};
+    let n = 0;
+    for (const line of String(text || '').split('\n')) {
+        const m = line.match(/^(.+?) ×(\d+)(?: \((.+)\))?$/);
+        const l = m && LEVELS.find(x => x.label === m[1].trim());
+        if (!l) continue;
+        const types = [];
+        for (const part of (m[3] || '').split(' · ')) {
+            const t = part.match(/^(.+?) (\d+)$/), tt = t && TYPES.find(x => x.label === t[1]);
+            if (tt) for (let i = 0; i < Number(t[2]); i++) types.push(tt.id);
+        }
+        for (let i = 0; i < Number(m[2]); i++) voters[`${EARLIER}${++n}`] = { level: l.id, ...(types[i] ? { type: types[i] } : {}) };
+    }
+    return voters;
+}
+
+// Report data back from a report message (S26 embed), for when data/polls.json
+// lost it. Who voted what isn't in the message, so those votes start again.
+function parseReportMessage(message) {
+    const e = message.embeds[0];
+    const id = e?.title?.match(/Incident Report #(\d+)/)?.[1];
+    if (!id) return null;
+    const f = Object.fromEntries((e.fields || []).map(x => [x.name, x.value]));
+    const report = {
+        culpritId: f.Culprit?.match(/<@!?(\d+)>/)?.[1] || null,
+        round: (f.Round || '').replace(/\s+/g, ''), // "JL S23A R1" -> "JLS23AR1"
+        description: (f.Description || '').replace(/^>\s?/, ''),
+        proof: f.Proof?.match(/\((https?:\/\/[^)]+)\)/)?.[1] || '',
+        reporterId: f['Reported by']?.match(/<@!?(\d+)>/)?.[1] || null,
+        reporterName: f['Reported by'] && !/<@/.test(f['Reported by']) ? f['Reported by'] : null,
+        avatarUrl: e.thumbnail?.url || null
+    };
+    // "✅ L2 | Time | 3s\nby <@id>"
+    const r = f.Result?.match(/✅\s*(.+?)\s*\|\s*(.+?)\s*\|\s*(.+?)\s*\n\s*by <@!?(\d+)>/);
+    const submitted = r ? { offense: r[1], kind: r[2], penalty: r[3], by: r[4] } : null;
+    return { reportId: Number(id), report, submitted, voters: votersFromTally(f.Votes), createdAt: e.timestamp ? Date.parse(e.timestamp) : message.createdTimestamp };
+}
+
+/*
+ * Rebuilds the polls of report messages that aren't in data/polls.json (e.g.
+ * the file was reset), so their dropdowns and Submit work again. Results
+ * already submitted are kept; open votes start from zero.
+ */
+async function recoverLostPolls(client) {
+    const config = loadConfig();
+    const channel = await client.channels.fetch(config.canal_reportes_id).catch(() => null);
+    if (!channel) return;
+    const known = pollStore.readAll();
+    // Same window as the daily cleanup (which drops polls older than 15 days
+    // but leaves their messages): older reports stay closed.
+    const since = Date.now() - RECOVER_DAYS * 24 * 60 * 60 * 1000;
+    let before, recovered = 0;
+    for (let page = 0; page < 10; page++) {
+        const batch = await channel.messages.fetch({ limit: 100, before }).catch(() => null);
+        if (!batch?.size) break;
+        for (const message of batch.values()) {
+            if (message.createdTimestamp < since) continue;
+            if (message.author.id !== client.user.id || known[message.id]) continue;
+            const parsed = parseReportMessage(message);
+            if (!parsed) continue;
+            pollStore.createPoll(message.id, {
+                reportId: parsed.reportId,
+                threadId: message.thread?.id || null,
+                overrides: { report: parsed.report, voters: parsed.voters, votes: undefined, baseVotes: undefined, levelVotes: undefined,
+                    createdAt: parsed.createdAt, ...(parsed.submitted ? { submitted: parsed.submitted } : {}) }
+            });
+            recovered++;
+        }
+        before = batch.last().id;
+        if (batch.last().createdTimestamp < since) break; // the rest is older
+    }
+    if (recovered) console.log(`🔁 [Reports] Recovered ${recovered} report poll(s) from the reports channel.`);
+}
+
 // ---------------------------------------------------------------- routing
 
 async function handleReportComponent(interaction) {
@@ -392,4 +476,4 @@ async function handleReportComponent(interaction) {
 
 const isReportComponent = id => id.startsWith('report_') || id.startsWith('vote_');
 
-module.exports = { render, createPoll, migrateOldPolls, handleReportComponent, isReportComponent };
+module.exports = { render, createPoll, migrateOldPolls, recoverLostPolls, handleReportComponent, isReportComponent };

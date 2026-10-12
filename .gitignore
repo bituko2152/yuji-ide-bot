@@ -5,3 +5,10 @@ node_modules/
 # Steam credentials must never be committed again
 data/steamAuth.json
 *.token
+
+# Replay track / car images downloaded from Steam
+data/replay-cache/
+data/replay-manual/
+
+# Runtime data written by the bot (contracts, polls, lobby message, caches)
+data/

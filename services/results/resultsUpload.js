@@ -1,5 +1,8 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
+const fs = require('fs');
+const path = require('path');
 const db = require('../core/supabase');
+const starterStore = require('../starters/starterStore');
 
 /*
  * /results upload: saves the CSVs made by /results listen into Supabase.
@@ -15,10 +18,15 @@ const db = require('../core/supabase');
  *    times rounded to hundredths like the rest of the DB.
  *  - The race (season + round) is created if missing, with nothing else.
  *    Refused if it already has results.
- *  - Drivers matched by drivers.name or driver_aliases (case-insensitive),
- *    team from lineups of that season. Unknown names are resolved in a
- *    private preview (closest drivers / create new / skip); names assigned
- *    to an existing driver are saved as aliases on confirm.
+ *  - Drivers matched by drivers.name or driver_aliases (case-insensitive).
+ *    Unknown names are resolved in a private preview (closest drivers /
+ *    create new / skip); names assigned to an existing driver are saved as
+ *    aliases on confirm.
+ *  - Team from that round's starters (/attend): the starter whose name
+ *    matches the driver (CSV name, DB name or alias); team role -> config
+ *    roles_equipos code -> teams.short_name (or team_aliases). Independents
+ *    get no team. Anyone not in the starters is asked in the preview.
+ *    Leagues without team roles (AL) are all independent.
  */
 
 const PLAN_TTL_MS = 30 * 60 * 1000;
@@ -182,10 +190,11 @@ async function createPlan({ userId, league, season, round, division, race, quali
     const seasonRow = await findSeason(league, season, division);
     const raceRow = await findRace(seasonRow.id, round);
 
-    const [drivers, aliases, lineups] = await Promise.all([
+    const [drivers, aliases, teams, teamAliases] = await Promise.all([
         db.select('drivers', 'id,name'),
         db.select('driver_aliases', 'alias,driver_id'),
-        db.select('lineups', 'driver_id,team_id,is_starter', { season_id: `eq.${seasonRow.id}` })
+        db.select('teams', 'id,name,short_name'),
+        db.select('team_aliases', 'alias,team_id,short_name')
     ]);
 
     const byName = new Map();
@@ -202,19 +211,89 @@ async function createPlan({ userId, league, season, round, division, race, quali
         id, userId, createdAt: Date.now(),
         league, season, round, division,
         seasonId: seasonRow.id, raceId: raceRow?.id ?? null,
-        rows, drivers, lineups, hasQ2: Boolean(q2Rows)
+        rows, drivers, aliases, hasQ2: Boolean(q2Rows),
+        ...loadStarters({ league, season, round, division, teams, teamAliases })
     };
+    assignTeams(plan);
     plans.set(id, plan);
     return plan;
 }
 
 const driverName = (plan, id) => plan.drivers.find(d => d.id === id)?.name ?? '?';
 const unresolved = plan => plan.rows.filter(r => !r.resolution);
+// Drivers to identify first, then teams to pick.
+const pendingAll = plan => [...unresolved(plan), ...plan.rows.filter(r => r.resolution && needsTeam(r))];
 
-function teamOf(plan, driverId) {
-    const rows = plan.lineups.filter(l => l.driver_id === driverId);
-    return (rows.find(l => l.is_starter) || rows[0])?.team_id ?? null;
+// ---------------------------------------------------------------- teams (from starters)
+
+const INDEPENDENT = { id: null, label: 'Independent' };
+
+function loadConfig() {
+    return JSON.parse(fs.readFileSync(path.join(__dirname, '../../config.json'), 'utf-8'));
 }
+
+/*
+ * The league's teams (team role -> DB team) and that round's starters.
+ * starters.json only keeps the current week: if it's another round, the
+ * starters aren't used and every team is asked.
+ */
+function loadStarters({ league, season, round, division, teams, teamAliases }) {
+    const config = loadConfig();
+    const code = league.toUpperCase();
+    // A code that matches more than one team (e.g. SPR: Sparta / Spark) is
+    // treated as missing rather than guessed.
+    const dbTeam = short => {
+        const n = norm(short);
+        const ids = new Set([
+            ...teams.filter(x => norm(x.short_name) === n || norm(x.name) === n).map(x => x.id),
+            ...teamAliases.filter(x => norm(x.short_name) === n || norm(x.alias) === n).map(x => x.team_id)
+        ]);
+        return ids.size === 1 ? teams.find(x => x.id === [...ids][0]) || null : null;
+    };
+    // Team role id -> { id, label } for this league.
+    const leagueTeams = {};
+    for (const [roleId, t] of Object.entries(config.roles_equipos || {})) {
+        if (t.categoria !== code) continue;
+        const row = dbTeam(t.nombre);
+        leagueTeams[roleId] = { id: row?.id ?? null, label: t.nombre, missing: !row };
+    }
+
+    // That round's starters: this week's, or archived when the next week opened.
+    const roundName = `${code}S${season}${division || ''}R${round}`;
+    const week = starterStore.getRoundByName(roundName);
+    const sameRound = Boolean(week);
+    const starters = []; // { name, team }
+    if (sameRound) {
+        for (const [roleId, list] of Object.entries(week.teams || {})) {
+            for (const e of list) starters.push({ name: e.name, team: leagueTeams[roleId] || { id: null, label: '?', missing: true } });
+        }
+        for (const e of week.independents || []) starters.push({ name: e.name, team: INDEPENDENT });
+    }
+    return {
+        leagueTeams,
+        noTeams: Object.keys(leagueTeams).length === 0,
+        starters,
+        startersNote: sameRound ? '' : `No starters saved for ${roundName}: pick each driver's team.`
+    };
+}
+
+// Team of each row: manual pick > matching starter > (league without teams) independent.
+function assignTeams(plan) {
+    for (const r of plan.rows) {
+        if (r.teamManual) continue;
+        r.team = null;
+        if (plan.noTeams) { r.team = INDEPENDENT; continue; }
+        const names = new Set([norm(r.name)]);
+        if (r.driverId) {
+            names.add(norm(driverName(plan, r.driverId)));
+            for (const a of plan.aliases) if (a.driver_id === r.driverId) names.add(norm(a.alias));
+        }
+        const st = plan.starters.find(x => names.has(norm(x.name)));
+        if (st) r.team = st.team;
+    }
+}
+
+const needsTeam = r => r.resolution !== 'skip' && !r.team;
 
 // ---------------------------------------------------------------- preview message
 
@@ -234,10 +313,12 @@ function previewMessage(plan, notice = '') {
         else if (r.resolution === 'skip') who = `~~${r.name}~~ (skipped)`;
         else who = `❓ ${r.name}`;
         const flags = `${r.dnf ? ' · DNF' : ''}${r.fastest_lap ? ' · ⏱️FL' : ''}`;
-        return `\`P${String(r.position).padEnd(2)}\` ${who} · grid ${r.grid ?? '—'} · Q ${fmt(r.quali_time_ms)} · race ${fmt(r.race_time_ms)}${flags}`;
+        const team = r.resolution === 'skip' ? '' : r.team ? ` [${r.team.label}]` : ' [❓ team]';
+        return `\`P${String(r.position).padEnd(2)}\` ${who}${team} · grid ${r.grid ?? '—'} · Q ${fmt(r.quali_time_ms)} · race ${fmt(r.race_time_ms)}${flags}`;
     });
 
-    const pending = unresolved(plan);
+    assignTeams(plan);
+    const pending = pendingAll(plan);
     const embed = new EmbedBuilder()
         .setColor(pending.length ? '#e67e22' : '#2ecc71')
         .setTitle(`📤 Upload results — ${title}`)
@@ -249,6 +330,7 @@ function previewMessage(plan, notice = '') {
 
     const rows = [];
     for (const r of pending.slice(0, MAX_SELECTS)) {
+        if (r.resolution) { rows.push(new ActionRowBuilder().addComponents(teamMenu(plan, r))); continue; }
         const candidates = plan.drivers
             .map(d => ({ d, s: similarity(r.name, d.name) }))
             .sort((a, b) => b.s - a.s)
@@ -264,16 +346,37 @@ function previewMessage(plan, notice = '') {
         rows.push(new ActionRowBuilder().addComponents(menu));
     }
 
+    // The dropdowns only fit the closest names: for anyone else, type it.
+    const firstUnknown = unresolved(plan)[0];
     rows.push(new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId(`rup_confirm_${plan.id}`).setLabel('Confirm upload').setStyle(ButtonStyle.Success)
             .setDisabled(pending.length > 0),
+        ...(firstUnknown ? [new ButtonBuilder().setCustomId(`rup_type_${plan.id}_${firstUnknown.position}`)
+            .setLabel(`✏️ Type who "${firstUnknown.name}" is`.slice(0, 80)).setStyle(ButtonStyle.Primary)] : []),
         new ButtonBuilder().setCustomId(`rup_cancel_${plan.id}`).setLabel('Cancel').setStyle(ButtonStyle.Secondary)
     ));
 
-    const content = notice || (pending.length
-        ? `⚠️ ${pending.length} driver(s) not found. Pick who each one is to enable **Confirm**.`
-        : 'Check the results and press **Confirm upload**.');
+    const missingTeams = Object.values(plan.leagueTeams).filter(t => t.missing).map(t => t.label);
+    const content = notice || [
+        plan.startersNote && `ℹ️ ${plan.startersNote}`,
+        missingTeams.length && `⚠️ Not in the database's teams: ${missingTeams.join(', ')} (saved without team).`,
+        pending.length
+            ? `⚠️ ${pending.length} pending: pick who each driver is / their team to enable **Confirm**.`
+            : 'Check the results and press **Confirm upload**.'
+    ].filter(Boolean).join('\n');
     return { content, embeds: [embed], components: rows };
+}
+
+function teamMenu(plan, r) {
+    const options = Object.entries(plan.leagueTeams)
+        .map(([roleId, t]) => ({ label: t.label.slice(0, 100), value: `t${roleId}` }))
+        .slice(0, 24);
+    options.push({ label: 'Independent (no team)', value: 'ind', emoji: '🧍' });
+    const who = r.resolution === 'known' || r.resolution === 'create' ? r.name : driverName(plan, r.driverId);
+    return new StringSelectMenuBuilder()
+        .setCustomId(`rup_team_${plan.id}_${r.position}`)
+        .setPlaceholder(`${who} isn't in the starters: team?`.slice(0, 150))
+        .addOptions(options);
 }
 
 // ---------------------------------------------------------------- saving
@@ -300,7 +403,7 @@ async function save(plan) {
     const results = plan.rows.filter(r => r.resolution !== 'skip').map(r => ({
         race_id: raceId,
         driver_id: r.driverId,
-        team_id: teamOf(plan, r.driverId),
+        team_id: r.team?.id ?? null,
         session: 'race',
         position: r.position,
         grid: r.grid,
@@ -334,6 +437,37 @@ async function handleUploadComponent(interaction) {
         return interaction.update({ content: '❎ Upload cancelled. Nothing was saved.', embeds: [], components: [] });
     }
 
+    if (action === 'type') {
+        const row = plan.rows.find(r => String(r.position) === position);
+        return interaction.showModal(new ModalBuilder().setCustomId(`rup_typed_${plan.id}_${position}`).setTitle(`Who is "${row.name}"?`.slice(0, 45))
+            .addComponents(new ActionRowBuilder().addComponents(
+                new TextInputBuilder().setCustomId('name').setLabel('Driver name in the database (or an alias)').setStyle(TextInputStyle.Short).setRequired(true)
+            )));
+    }
+
+    if (action === 'typed') {
+        const row = plan.rows.find(r => String(r.position) === position);
+        const typed = interaction.fields.getTextInputValue('name').trim();
+        const n = norm(typed);
+        const hit = plan.drivers.find(d => norm(d.name) === n)
+            || plan.drivers.find(d => d.id === plan.aliases.find(a => norm(a.alias) === n)?.driver_id);
+        if (!hit) {
+            const close = plan.drivers.map(d => ({ d, s: similarity(typed, d.name) })).sort((a, b) => b.s - a.s).slice(0, 5).map(x => `**${x.d.name}**`);
+            return interaction.reply({ content: `❌ No driver called "${typed}". Closest: ${close.join(', ')}.\nType one of them, or pick "Create new driver" in the dropdown.`, ephemeral: true });
+        }
+        row.resolution = norm(row.name) === norm(hit.name) ? 'known' : 'alias';
+        row.driverId = hit.id;
+        return interaction.update(previewMessage(plan));
+    }
+
+    if (action === 'team') {
+        const row = plan.rows.find(r => String(r.position) === position);
+        const value = interaction.values[0];
+        row.team = value === 'ind' ? INDEPENDENT : plan.leagueTeams[value.slice(1)];
+        row.teamManual = true;
+        return interaction.update(previewMessage(plan));
+    }
+
     if (action === 'pick') {
         const row = plan.rows.find(r => String(r.position) === position);
         const value = interaction.values[0];
@@ -344,7 +478,8 @@ async function handleUploadComponent(interaction) {
     }
 
     if (action === 'confirm') {
-        if (unresolved(plan).length) return interaction.update(previewMessage(plan));
+        assignTeams(plan);
+        if (pendingAll(plan).length) return interaction.update(previewMessage(plan));
         plans.delete(planId);
         await interaction.update({ content: '⏳ Uploading…', components: [] });
         try {

@@ -1,7 +1,7 @@
 const { SlashCommandBuilder, EmbedBuilder, escapeMarkdown } = require('discord.js');
 const lb = require('../services/steam/steamLeaderboards');
 const catalog = require('../services/steam/leaderboardCatalog');
-const { fetchPersonaName, profileUrl } = require('../services/steam/steamProfiles');
+const { fetchPersonaNames, profileUrl } = require('../services/steam/steamProfiles');
 
 const TOP = 10;
 const MEDALS = ['🥇', '🥈', '🥉'];
@@ -72,7 +72,7 @@ module.exports = {
             return interaction.editReply(`ℹ️ There are no lap times yet for **${carClass}** at **${track}**.`);
         }
 
-        const names = await Promise.all(entries.map(e => fetchPersonaName(e.steamId)));
+        const names = await fetchPersonaNames(entries.map(e => e.steamId));
 
         const lines = entries.map((e, i) => {
             const pos = MEDALS[e.rank - 1] || `\`${String(e.rank).padStart(2)}.\``;
