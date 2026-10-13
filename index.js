@@ -11,6 +11,18 @@ const {
 const fs = require('fs');
 const path = require('path');
 
+// Server-specific settings (channel / role ids) are not in the repo.
+if (!fs.existsSync(path.join(__dirname, 'config.json'))) {
+    console.error('❌ config.json not found: copy config.example.json to config.json and fill in your server\'s ids.');
+    process.exit(1);
+}
+try {
+    JSON.parse(fs.readFileSync(path.join(__dirname, 'config.json'), 'utf-8'));
+} catch (err) {
+    console.error(`❌ config.json is not valid JSON (${err.message}): fix it, or restore it from .config.backup.json.`);
+    process.exit(1);
+}
+
 const express = require('express');
 const app = express();
 
@@ -49,6 +61,11 @@ const {
 const {
     startStarterLoop
 } = require('./services/starters/starterService');
+
+const {
+    startMockLoop,
+    stopMocks
+} = require('./services/mocks/mockService');
 
 const {
     startRaceCheckLoop
@@ -176,6 +193,9 @@ client.once('clientReady', async () => {
 
     // Weekly starters (open/close rounds) + auto-advance of the /report round.
     startStarterLoop(client);
+
+    // Daily practice races (Mocks), hosted by Yuji himself.
+    startMockLoop(client);
 
     // Weekly anonymous race checks (e.g. OMRL on the mobile server).
     startRaceCheckLoop(client);
@@ -314,9 +334,15 @@ client.on('interactionCreate', async interaction => {
 for (const signal of ['SIGTERM', 'SIGINT']) {
     process.once(signal, () => {
         stopListeningAll();
+        stopMocks();
         setTimeout(() => process.exit(0), 700);
     });
 }
+
+// An error nobody caught (a timer, a lobby message, a Discord event) is logged
+// instead of taking the whole bot down with it.
+process.on('unhandledRejection', err => console.error('❌ Unhandled rejection:', err));
+client.on('error', err => console.error('❌ Discord client error:', err));
 
 // Login using the existing environment variable
 client.login(process.env.DISCORD_TOKEN);

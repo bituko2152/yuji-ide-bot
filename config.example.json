@@ -1,0 +1,97 @@
+{
+  "extra_servers": [
+    { "id": "000000000000000000", "commands": [ "offercontract", "attend", "removeattendance" ] }
+  ],
+  "lobby_channels": [ "000000000000000000", "000000000000000000" ],
+  "steam_news": [
+    { "appid": 1285230, "name": "Ultimate Racing 2D 2", "channel": "000000000000000000" },
+    { "appid": 3230780, "name": "Ultimate Rally 2D", "channel": "000000000000000000" }
+  ],
+
+  "reports_channel": "000000000000000000",
+  "report_results_channel": "000000000000000000",
+  "report_announcements_channel": "000000000000000000",
+  "stewards_role": "000000000000000000",
+
+  "results": {
+    "channel": "000000000000000000",
+    "allowed_roles": [ "000000000000000000", "000000000000000000", "000000000000000000", "000000000000000000" ],
+    "upload_roles": [ "000000000000000000", "000000000000000000" ]
+  },
+  "records": {
+    "channels": [ "000000000000000000", "000000000000000000", "000000000000000000" ],
+    "workshop_tracks": [ "3548574750", "3786393876", "3663935043", "3803305092", "3476861595", "3614553801", "3756077203", "2825473539" ],
+    "workshop_classes": {
+      "3805310984": "Formula eSports Retro",
+      "3334952225": "Formula eSports 3",
+      "3489117588": "Formula eSports 4",
+      "2991639976": "Formula eSports 2",
+      "2819834039": "Formula eSports"
+    }
+  },
+
+  "report_leagues": {
+    "UL": { "active": true, "round": "ULS26R1" },
+    "CL": { "active": true, "round": "CLS23R1" },
+    "JL": { "active": true, "round": "JLS23AR1" },
+    "AL": { "active": true, "round": "ALS23AR1" }
+  },
+  "league_channels":      { "UL": "000000000000000000", "CL": "000000000000000000", "JL": "000000000000000000", "UMRL": "000000000000000000", "AMRL": "000000000000000000", "EMRL": "000000000000000000" },
+  "league_manager_roles": { "UL": "000000000000000000", "CL": "000000000000000000", "JL": "000000000000000000", "UMRL": "000000000000000000", "AMRL": "000000000000000000", "EMRL": "000000000000000000" },
+  "league_driver_roles":  { "UL": "000000000000000000", "CL": "000000000000000000", "JL": "000000000000000000", "AL": "000000000000000000", "UMRL": "000000000000000000", "AMRL": "000000000000000000", "EMRL": "000000000000000000", "OMRL": "000000000000000000" },
+  "seat_roles": {
+    "UMRL": { "main": "000000000000000000", "reserve": "000000000000000000" },
+    "AMRL": { "main": "000000000000000000", "reserve": "000000000000000000" },
+    "EMRL": { "main": "000000000000000000", "reserve": "000000000000000000" }
+  },
+  "team_roles": {
+    "<team role id>":   { "league": "UL", "name": "ABC", "color": "#cc180d" },
+    "<team role id 2>": { "league": "UMRL", "name": "XYZ", "color": "#2383ff" }
+  },
+
+  "starters": {
+    "first_race_date": "2026-10-04",
+    "manager_role": "000000000000000000",
+    "manager_users": [ "000000000000000000" ],
+    "channels":          { "UL": "000000000000000000", "CL": "000000000000000000", "JL": "000000000000000000", "AL": "000000000000000000", "UMRL": "000000000000000000", "AMRL": "000000000000000000", "EMRL": "000000000000000000" },
+    "opens":             { "day": "wednesday", "time": "18:00", "leagues": [ "UMRL", "AMRL", "EMRL" ] },
+    "closes":            { "UL": "17:50", "CL": "16:10", "JL": "15:15", "AL": "14:30", "UMRL": { "day": "sunday", "time": "19:00" }, "AMRL": { "day": "saturday", "time": "16:00" }, "EMRL": { "day": "saturday", "time": "15:10" } },
+    "first_season":      { "UL": 26, "CL": 23, "JL": 23, "AL": 23, "UMRL": 10, "AMRL": 9, "EMRL": 8 },
+    "format":            { "UL": "10", "CL": "10", "JL": "AB", "AL": "AB", "UMRL": "10", "AMRL": "10", "EMRL": "5" },
+    "independent_slots": { "UL": 6, "CL": 6, "JL": 6, "AL": 18, "UMRL": 6, "AMRL": 6, "EMRL": 6 },
+    "from":              { "UMRL": "2026-10-19", "AMRL": "2026-10-19", "EMRL": "2026-10-19" }
+  },
+
+  "race_checks": [
+    {
+      "name": "OMRL",
+      "channel": "000000000000000000",
+      "driver_role": "000000000000000000",
+      "uro_roles": [ "000000000000000000" ],
+      "lobby_limit": 18,
+      "open":  { "day": "wednesday", "time": "18:00" },
+      "close": { "day": "saturday", "time": "17:45" },
+      "season": 9, "format": "AB",
+      "skip_weeks": []
+    }
+  ],
+
+  "mocks": {
+    "channel": "000000000000000000",
+    "role": "000000000000000000",
+    "time": "19:00",
+    "notice_minutes": 10,
+    "lobby_name": "Yuji Mocks",
+    "car_class": "3805310984",
+    "car_class_name": "FeS Retro [Official]",
+    "schedule_channels": { "UL": "000000000000000000", "CL": "000000000000000000", "JL": "000000000000000000", "AL": "000000000000000000" },
+    "days": {
+      "monday":    { "format": "UL length", "league": "UL", "races": 2 },
+      "tuesday":   { "format": "Sprint",    "league": "UL", "laps": 8, "races": 4, "rain": false },
+      "wednesday": { "format": "JL length", "league": "JL", "races": 3 },
+      "thursday":  { "format": "CL length", "league": "CL", "races": 2 },
+      "friday":    { "format": "AL length", "league": "AL", "races": 3, "rain": false },
+      "saturday":  { "format": "UL length", "league": "UL", "races": 2 }
+    }
+  }
+}
