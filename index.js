@@ -51,6 +51,11 @@ const {
 } = require('./services/starters/starterService');
 
 const {
+    startMockLoop,
+    stopMocks
+} = require('./services/mocks/mockService');
+
+const {
     startRaceCheckLoop
 } = require('./services/racecheck/raceCheckService');
 
@@ -176,6 +181,9 @@ client.once('clientReady', async () => {
 
     // Weekly starters (open/close rounds) + auto-advance of the /report round.
     startStarterLoop(client);
+
+    // Daily practice races (Mocks), hosted by Yuji himself.
+    startMockLoop(client);
 
     // Weekly anonymous race checks (e.g. OMRL on the mobile server).
     startRaceCheckLoop(client);
@@ -314,6 +322,7 @@ client.on('interactionCreate', async interaction => {
 for (const signal of ['SIGTERM', 'SIGINT']) {
     process.once(signal, () => {
         stopListeningAll();
+        stopMocks();
         setTimeout(() => process.exit(0), 700);
     });
 }
