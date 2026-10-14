@@ -21,8 +21,9 @@ const { roundThisWeek } = require('./leagueSchedule');
  *   }
  * Track and laps come from the league's calendar (its schedule channel): the
  * round raced this Sunday, with its rain chance (calendar emoji) for the
- * races; "rain": false keeps a day dry (AL, sprints). A day can override "laps" (sprints) and
- * "car_class" (Workshop id; "car_class_name" = name shown in the lobby list).
+ * races; "rain": false keeps a day dry (AL, sprints), or every day if set in "mocks". A day can override "laps" (sprints) and
+ * "car_class" (Workshop id; "car_class_name" = name shown in the lobby list)
+ * and "quali_laps" (default 3, also settable for every day in "mocks").
  * data/mocks.json: { date } of the last mock run (so a restart doesn't run it twice).
  */
 
@@ -67,8 +68,8 @@ async function runMock(client, cfg, day, startAt) {
     if (!round) return console.log(`🏎️ [Mocks] No ${day.league} round this week (break?): no mock today.`);
     // Races take the week's rain chance unless the day is dry ("rain": false: AL, sprints).
     day = { ...day, laps: day.laps || round.laps, track: round.track, trackName: round.name || round.track,
-        rain: day.rain === false ? 0 : round.rain };
-    const host = createLobbyHost({ name: cfg.lobby_name || 'Yuji Mocks', carClass: day.car_class || cfg.car_class || 'formulaa', className: day.car_class_name || cfg.car_class_name, track: day.track, laps: day.laps });
+        rain: day.rain === false || cfg.rain === false ? 0 : round.rain };
+    const host = createLobbyHost({ name: cfg.lobby_name || 'Yuji Mocks', carClass: day.car_class || cfg.car_class || 'formulaa', className: day.car_class_name || cfg.car_class_name, track: day.track, laps: day.laps, qualiLaps: day.quali_laps || cfg.quali_laps || 3 });
     active = host;
     try {
         await host.ready;

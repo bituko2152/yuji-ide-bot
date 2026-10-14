@@ -25,8 +25,9 @@ const VERSION = '1029';
 const HOST_NAME = 'Yuji Ide';
 
 // Rest of the "*33|1" settings after class,class,laps, as the game sends them
-// (Race settings screen): [0] players 20, [1] round, [2] qualifying laps,
-// [3] rounds, [4] qualifying visible, [8] race flag, ... rain 50%, tyres,
+// (Race settings screen): [0] players 20, [1] drivers racing (the game sends 2
+// with two drivers; only that many get a car, the rest spectate), [3] qualifying
+// laps (the game accepts more than its menu's 3), [4] qualifying visible, [8] race flag, ... rain 50%, tyres,
 // collisions "same lap only", 60 s after the leader, "Lapped races", pit
 // speed 0.85, medium +3 %, hard +1 %, slipstream x0 / 1.9 / 0.6 / 0.9 / 0.9.
 const BASE_REST = ['20', '1', '1', '1', 'invisible', '0', '0', 'off', '0', '1', '1', '1', '1', 'off', '1', '2', '2', 'rain 50%',
@@ -78,7 +79,7 @@ const rnd = () => Math.floor(100000 + Math.random() * 900000);
  * @param {{name: string, password?: string, track?: string, laps?: number, log?: Function}} opts
  * @returns host with: ready (Promise<lobbyId>), players, racers(), qualifying(), race(laps), say(text), close()
  */
-function createLobbyHost({ name, password = '', carClass = 'formulaa', className, track = 'italy', laps = 3, log = console.log }) {
+function createLobbyHost({ name, password = '', carClass = 'formulaa', className, track = 'italy', laps = 3, qualiLaps = 3, log = console.log }) {
     // Another Workshop class (by id): same messages as FeS Retro with its id.
     // Only Formula A and FeS Retro are tested in the game.
     let cls = CLASSES[carClass];
@@ -91,7 +92,7 @@ function createLobbyHost({ name, password = '', carClass = 'formulaa', className
     const AI = cls.ai;
     const TAG = cls.tag;
     const hostId = `${rnd()}/${rnd()}/${rnd()}:${Math.random().toString(36).slice(2, 5)}`;
-    const settings = { carClass: cls.key, className: cls.name, track, laps, rain: 0 };
+    const settings = { carClass: cls.key, className: cls.name, track, laps, qualiLaps, rain: 0 };
     const players = [{ id: hostId, name: HOST_NAME, team: 8, num: 6, ping: 50, racing: 0, spectator: true, points: 0.1, flag: '0' }];
     const byId = id => players.find(p => p.id === id);
     const racers = () => players.filter(p => p.id !== hostId && !p.spectator);
@@ -126,9 +127,12 @@ function createLobbyHost({ name, password = '', carClass = 'formulaa', className
     const toAll = (...p) => msg('91', p);
     const toOne = (id, ...p) => msg('93', [id, ...p]);
 
-    // Single-round event ("Round 1/1"): r[1]/r[3] must be 1, otherwise the game adds phantom cars.
     const settingsFields = (n = 1) => {
         const r = [...cls.rest];
+        // Drivers with a car: the session's grid, or (in the lobby) whoever isn't spectating.
+        // Yuji doesn't count: counting him added a phantom car.
+        r[1] = String(Math.max(1, session ? session.grid.length : racers().length));
+        r[3] = String(settings.qualiLaps);
         r[8] = n === 3 ? '1' : '0';
         r[17] = `rain ${settings.rain}%`;
         // League settings: pit speed x0.85, medium +3 %, hard +1 %, slipstream
@@ -325,7 +329,10 @@ function createLobbyHost({ name, password = '', carClass = 'formulaa', className
             case '2': { const p = byId(f[1]); if (p) { p.num = Number(f[2]); sendRoster(); } break; }
             case '5': { const p = byId(f[2]); if (p) { p.racing = Number(f[3]); sendRoster(); } break; }
             case '29': { const p = byId(f[1]); if (p) p.ping = Number(f[2]); break; }
-            case '42': { const p = byId(f[1]); if (p && p.id !== hostId) { p.spectator = f[2] === '1'; sendRoster(); } break; }
+            // Content check: *47|1|id|class:0/track:1 (0 = that driver doesn't have the
+            // Workshop car / track). Shown in the lobby list like the game does.
+            case '47': { const p = byId(f[2]); if (p && f[3]) { p.flag = f[3]; sendRoster(); log(`📦 [Mocks] ${p.name}: ${f[3]}`); } break; }
+            case '42': { const p = byId(f[1]); if (p && p.id !== hostId) { p.spectator = f[2] === '1'; if (!session) sendSettings(); sendRoster(); } break; }
             case '15': if (session) session.loaded.add(f[2]); break;
             case '11': { // lap: *11|car|lap|total
                 if (!session) break;
