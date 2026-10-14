@@ -167,7 +167,14 @@ async function checkSale(client, game, store) {
     // Sale over: remove its announcement.
     if (!discount) {
         if (known.saleMsg) {
-            await channel.messages.delete(known.saleMsg).catch(() => { });
+            // Forgotten only once it's really gone (deleted now, or already
+            // deleted by hand: 10008 Unknown Message); otherwise retried next check.
+            const err = await channel.messages.delete(known.saleMsg).then(() => null, e => e);
+            if (err && err.code !== 10008) {
+                known.discount = previous;
+                console.error(`❌ [News] ${game.nombre}: couldn't delete the sale announcement (${err.message}), retrying.`);
+                return;
+            }
             delete known.saleMsg;
             console.log(`💸 [News] ${game.nombre}: sale ended, announcement deleted`);
         }
