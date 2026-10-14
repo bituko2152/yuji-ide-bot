@@ -82,6 +82,23 @@ h1 span { color: var(--accent); }
 .card .spd b { font-size: 1.55em; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
 .card .spd small { font-size: .62em; font-weight: 600; letter-spacing: .12em; color: var(--plate-muted); }
 .card img { height: 2.4em; align-self: center; padding: 0 .9em 0 .2em; }
+.card .secs { display: none; grid-template-columns: repeat(3, 4.6em); border-left: 1px solid var(--plate-line); }
+.card.quali .secs { display: grid; }
+/* Sector boxes, F1 colours: purple = fastest of the session, green = personal best, yellow = slower. */
+.sec { display: grid; align-content: center; justify-items: center; gap: .1em; padding: .3em .2em; border-top: .25em solid #4a4d55; }
+.sec small { font-size: .6em; font-weight: 600; letter-spacing: .12em; color: var(--plate-muted); }
+.sec b { font-size: .95em; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; }
+.sec.purple { border-top-color: #a23bf2; } .sec.purple b { color: #c98bff; }
+.sec.green { border-top-color: #00c853; } .sec.green b { color: #4be38a; }
+.sec.yellow { border-top-color: #ffd000; } .sec.yellow b { color: #ffe066; }
+.sec.run b { color: var(--plate-muted); }
+/* Tower (qualifying): one small bar per sector of the lap in progress. */
+.tower.quali { width: clamp(170px, calc(19 * var(--u)), 260px); }
+.trow.q { grid-template-columns: 1.7em 3px 1fr auto 4.6em auto; }
+.trow.q .gap { white-space: nowrap; text-align: right; }
+.tsecs { display: flex; gap: 2px; }
+.tsecs i { width: .7em; height: .32em; border-radius: 1px; background: #4a4d55; }
+.tsecs i.purple { background: #a23bf2; } .tsecs i.green { background: #00c853; } .tsecs i.yellow { background: #ffd000; }
 #mini { position: absolute; right: calc(1.6 * var(--u)); top: calc(2 * var(--u)); width: calc(22 * var(--u)); max-width: 280px; aspect-ratio: 512 / 427; background: transparent; filter: drop-shadow(0 0 2px rgba(0,0,0,.7)); }
 
 /* Controls */
@@ -181,6 +198,7 @@ details.liv summary { cursor: pointer; font-family: var(--font-display); font-we
     <div class="tv card" aria-label="Followed driver">
       <span class="p" id="cardPos">1</span><span class="stripe" id="cardStripe"></span>
       <span class="who"><span class="n" id="cardName">—</span><span class="s" id="cardSub">—</span></span>
+      <span class="secs" id="cardSecs"></span>
       <span class="spd"><b id="cardSpeed">—</b><small>PX/S</small></span>
       <img id="cardImg" alt="">
     </div>
@@ -218,7 +236,7 @@ details.liv summary { cursor: pointer; font-family: var(--font-display); font-we
         <dt>Mouse wheel</dt><dd>Zoom in / out</dd>
         <dt><kbd>-</kbd> <kbd>+</kbd></dt><dd>Slower / faster playback</dd>
         <dt><kbd>Z</kbd></dt><dd>Change zoom (Far / Mid / Close)</dd>
-        <dt><kbd>V</kbd></dt><dd>Latency: as seen in game / raw</dd>
+        <dt class="lagkey"><kbd>V</kbd></dt><dd class="lagkey">Latency: as seen in game / raw</dd>
         <dt><kbd>M</kbd></dt><dd>Show / hide the minimap</dd>
         <dt><kbd>H</kbd></dt><dd>Show / hide timing tower and driver card</dd>
         <dt><kbd>F</kbd></dt><dd>Fullscreen</dd>
@@ -251,7 +269,7 @@ details.liv summary { cursor: pointer; font-family: var(--font-display); font-we
     </div>
   </details>
 
-  <p class="note">Positions are recorded at 60 per second from the lobby traffic and synced to the race clock. The order and intervals are worked out from each car's progress around the lap, so they can differ by a few tenths from the in-game timing screen.</p>
+  <p class="note" id="note">Positions are recorded at 60 per second from the lobby traffic and synced to the race clock. The order and intervals are worked out from each car's progress around the lap, so they can differ by a few tenths from the in-game timing screen.</p>
 </div>
 
 <script>
@@ -285,6 +303,8 @@ const PITS = DATA.pits || [];
 // Tyre changes: [frame, car id, S|M|H|I|W], sorted by frame.
 const TYRES = (DATA.tyres || []).slice().sort((a, b) => a[0] - b[0]);
 const HZ = DATA.hz, total = DATA.frames, LAP = DATA.lapLen, LAPS = DATA.laps;
+// Qualifying: every car on its own, ordered by best lap time (the game's lap times, DATA.cars[].laps).
+const QUALI = DATA.session === 'qualifying';
 const CAR_LEN = DATA.carLen || 44, JUMP = 40;
 const NONE16 = -32768, NONE32 = -2147483648;
 const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
@@ -295,7 +315,8 @@ const M = DATA.map, WORLD_W = M.w / M.s, WORLD_H = M.h / M.s;
 
 const dec = (b64, T) => { if (typeof b64 !== 'string') return b64; const s = atob(b64), u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return new T(u.buffer); };
 const cars = DATA.cars.map(c => ({ id: String(c.id), name: c.name, ping: c.ping, tla: c.name.replace(/[^A-Za-z]/g, '').slice(0, 3).toUpperCase(),
-  x: dec(c.x, Int16Array), y: dec(c.y, Int16Array), a: dec(c.a, Int16Array), p: dec(c.p, Int32Array) }));
+  x: dec(c.x, Int16Array), y: dec(c.y, Int16Array), a: dec(c.a, Int16Array), p: dec(c.p, Int32Array),
+  laps: c.laps || [], timedFrom: c.timedFrom ?? null }));
 
 // Best progress so far per frame, for "when did this car reach distance d" (intervals).
 for (const c of cars) {
@@ -306,6 +327,58 @@ for (const c of cars) {
 function reachedAt(c, d, k) { // first frame <= k where c.best >= d, or -1
   if (k < 0 || c.best[k] < d) return -1;
   let lo = 0, hi = k; while (lo < hi) { const mid = (lo + hi) >> 1; if (c.best[mid] >= d) hi = mid; else lo = mid + 1; } return lo;
+}
+
+// Qualifying sectors: each timed lap split in three equal parts of the lap distance
+// (the game doesn't send its sector times). Sector 3 is the game's lap time minus
+// sectors 1 and 2, so the three add up to the official lap.
+// c.secs = [{ lap, j (0-2), end frame, time }], in order.
+if (QUALI) for (const c of cars) {
+  c.secs = [];
+  if (c.timedFrom == null || c.p[c.timedFrom] === NONE32) continue;
+  const base = Math.floor(c.p[c.timedFrom] / LAP + 0.5) * LAP; // distance at the line, start of timed lap 1
+  for (let n = 0; n < LAPS; n++) {
+    const official = c.laps[n];
+    let prev = n ? c.laps[n - 1][0] : c.timedFrom, sum = 0;
+    for (let j = 0; j < 3; j++) {
+      let end, time;
+      if (j < 2) {
+        end = reachedAt(c, base + n * LAP + (j + 1) * LAP / 3, total - 1);
+        if (end < 0 || (official && end > official[0])) break;
+        time = (end - prev) / HZ;
+      } else {
+        if (!official) break;
+        end = official[0]; time = Math.max(0, official[1] - sum);
+      }
+      c.secs.push({ lap: n + 1, j, start: prev, end, time });
+      sum += time; prev = end;
+    }
+    if (!official) break;
+  }
+}
+// Sector boxes of the followed car at frame k: its current lap's sectors, coloured
+// against its own best and everyone's best so far.
+function sectorState(c, k, lap) {
+  const kc = Math.floor(tOf(c, k));
+  const bestAll = [Infinity, Infinity, Infinity], bestMine = [Infinity, Infinity, Infinity];
+  for (const o of cars) { const ko = Math.floor(tOf(o, k)); for (const e of o.secs || []) if (e.end <= ko) { bestAll[e.j] = Math.min(bestAll[e.j], e.time); if (o === c) bestMine[e.j] = Math.min(bestMine[e.j], e.time); } }
+  const done = (c.secs || []).filter(e => e.lap === lap && e.end <= kc);
+  // The sector being driven runs from the end of the last one done (or the line).
+  const from = done.length ? done[done.length - 1].end : lap > 1 ? c.laps[lap - 2]?.[0] : c.timedFrom;
+  return [0, 1, 2].map(j => {
+    const e = done.find(x => x.j === j);
+    if (e) return { cls: e.time <= bestAll[j] + 1e-9 ? 'purple' : e.time <= bestMine[j] + 1e-9 ? 'green' : 'yellow', txt: e.time.toFixed(3) };
+    return { cls: 'run', txt: j === done.length && from != null && kc >= from ? ((kc - from) / HZ).toFixed(1) : '—' };
+  });
+}
+// Lap whose sectors are shown: the one in progress, the last one once finished, none on the out lap.
+const sectorLap = o => (!o || o.outLap ? 0 : o.finished ? LAPS : o.lap);
+function sectorBoxes(c, k, lap) {
+  return sectorState(c, k, lap).map((s, j) => `<span class="sec ${s.cls}"><small>S${j + 1}</small><b>${s.txt}</b></span>`).join('');
+}
+function sectorBars(o, k) {
+  const lap = sectorLap(o);
+  return `<span class="tsecs">${(lap ? sectorState(o.c, k, lap) : [{}, {}, {}]).map(s => `<i class="${s.cls || ''}"></i>`).join('')}</span>`;
 }
 
 // ---------- Liveries (10 slots, stored in this browser) ----------
@@ -375,10 +448,13 @@ function renderAssign() {
 }
 
 // ---------- State & camera ----------
-let t = 0, playing = false, speed = 1, zoom = 0.9, followId = cars[0].id, last = null;
+// Camera zooms (Far / Mid / Close); qualifying is watched closer, one car at a time.
+const ZOOMS = QUALI ? [0.9, 1.15, 1.4] : [0.3, 0.55, 0.9];
+let t = 0, playing = false, speed = 1, zoom = ZOOMS[2], followId = cars[0].id, last = null;
 // "As seen in game": each car is shown half its ping late (the time its data takes to reach the server),
 // which is how the other drivers saw it. "Raw" shows every car at the moment it sent its position.
-let latency = true;
+// Qualifying: nobody races anybody, so there is only the raw view.
+let latency = !QUALI;
 const lagOf = c => (latency && c.ping ? Math.round(c.ping / 2000 * HZ) : 0);
 const tOf = (c, tt) => Math.max(0, tt - lagOf(c));
 const fmt = s => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, '0')}`;
@@ -420,7 +496,29 @@ function resize() {
 // in the tower every frame. A car only moves up once it is SWAP_MARGIN px ahead.
 const SWAP_MARGIN = 20;
 let lastOrder = [];
+// Qualifying: best lap so far decides; a car without a time yet goes below the ones with a time.
+const fmtLap = s => (s >= 60 ? `${Math.floor(s / 60)}:${(s % 60).toFixed(3).padStart(6, '0')}` : s.toFixed(3));
+function qualiStandings(k) {
+  const live = cars.map((c, i) => {
+    const kc = Math.floor(tOf(c, k));
+    const done = c.laps.filter(l => l[0] <= kc);
+    const best = done.length ? Math.min(...done.map(l => l[1])) : Infinity;
+    const setAt = done.length ? done.find(l => l[1] === best)[0] : Infinity;
+    const finished = done.length >= LAPS;
+    const outLap = !finished && (c.timedFrom == null || kc < c.timedFrom);
+    const from = done.length ? done[done.length - 1][0] : c.timedFrom;
+    return { c, kc, i, best, setAt, finished, outLap, done: done.length,
+      lap: finished ? LAPS : outLap ? 0 : done.length + 1, running: outLap || finished ? null : (kc - from) / HZ };
+  });
+  live.sort((a, b) => a.best - b.best || a.setAt - b.setAt || a.i - b.i);
+  lastOrder = live.map(o => o.c.id);
+  const pole = live[0]?.best;
+  return live.map((o, i) => ({ ...o, pos: i + 1, out: !o.finished && !posAt(o.c, tOf(o.c, k)),
+    gap: !isFinite(o.best) ? (o.outLap ? 'OUT LAP' : 'NO TIME') : i === 0 ? fmtLap(o.best) : `+${(o.best - pole).toFixed(3)}` }));
+}
+
 function standings(k) {
+  if (QUALI) return qualiStandings(k);
   const live = cars.map(c => { const kc = Math.floor(tOf(c, k)); return { c, kc, d: c.p[kc] !== NONE32 ? c.p[kc] : c.best[kc] }; }).filter(o => isFinite(o.d));
   const rank = new Map(lastOrder.map((id, i) => [id, i]));
   live.sort((a, b) => b.d - a.d);
@@ -695,13 +793,17 @@ function draw() {
   const focusId = freeCam ? null : followId;
   const dist = {}; for (const c of cars) dist[c.id] = raced(c, t);
   const ref = freeCam ? Math.max(...cars.map(c => dist[c.id] ?? -Infinity)) : dist[followId];
-  const lapped = c => c.id !== focusId && ref != null && dist[c.id] != null && Math.abs(ref - dist[c.id]) > LAPPED_MARGIN * LAP;
+  // Qualifying: cars are invisible to each other in the game; only the followed one
+  // (in free cam: the last one followed) is solid.
+  const lapped = c => QUALI ? c.id !== followId : c.id !== focusId && ref != null && dist[c.id] != null && Math.abs(ref - dist[c.id]) > LAPPED_MARGIN * LAP;
   // Lapped cars first so the cars that matter are drawn on top of them.
-  const order = [...cars.filter(c => c.id !== focusId)].sort((a, b) => lapped(b) - lapped(a));
-  if (focusId) order.push(f);
-  for (const c of order) drawSpray(g, c, wx.wet, sx, sy);
+  const top = QUALI ? followId : focusId;
+  const order = [...cars.filter(c => c.id !== top)].sort((a, b) => lapped(b) - lapped(a));
+  if (top) order.push(f);
+  for (const c of order) if (!QUALI || c.id === followId) drawSpray(g, c, wx.wet, sx, sy);
   for (const c of order) {
     const p = now[c.id], img = liveryOf(c); if (!p || !img?.complete) continue;
+    if (QUALI && c.id !== followId) continue; // invisible, as in the game
     const ghost = lapped(c);
     g.globalAlpha = ghost ? 0.35 : 1;
     const len = CAR_LEN * zoom, wid = len * (img.naturalHeight / img.naturalWidth || 45 / 109);
@@ -742,17 +844,35 @@ function draw() {
   if (playing && wall - lastHud < 100 && !hudDirty) return;
   lastHud = wall; hudDirty = false;
   const st = standings(k), lead = st[0];
-  const lap = lead ? lead.lap : 1;
-  setHTML('towerLap', `${lap}<span>/${LAPS}</span>`);
+  if (QUALI) {
+    // Qualifying: the followed driver's lap (each car runs its own laps).
+    const m = st.find(o => o.c.id === followId);
+    setHTML('towerLap', !m || m.outLap ? 'OUT' : `${m.lap}<span>/${LAPS}</span>`);
+  } else {
+    const lap = lead ? lead.lap : 1;
+    setHTML('towerLap', `${lap}<span>/${LAPS}</span>`);
+  }
   document.querySelector('.tower').style.setProperty('--rows', st.length);
   setHTML('rows', st.map(o =>
-    `<div class="trow${o.c.id === followId ? ' me' : ''}${o.out ? ' out' : ''}${o.finished ? ' fin' : ''}"><span class="pos">${o.pos}</span><span class="tbar" style="background:${colorOf(o.c)}"></span><span class="tla">${o.c.tla}</span><span class="gap">${o.out ? 'OUT' : o.gap}</span>${tyreBadge(tyreAt(o.c.id, k)) || '<span></span>'}${o.finished ? '<span class="tag fin" title="Finished"></span>' : inPit(o.c.id, k) ? '<span class="tag pit" title="In the pit lane">P</span>' : ''}</div>`).join(''));
+    `<div class="trow${QUALI ? ' q' : ''}${o.c.id === followId ? ' me' : ''}${o.out ? ' out' : ''}${o.finished ? ' fin' : ''}"><span class="pos">${o.pos}</span><span class="tbar" style="background:${colorOf(o.c)}"></span><span class="tla">${o.c.tla}</span>${QUALI ? sectorBars(o, k) : ''}<span class="gap">${o.out ? 'OUT' : o.gap}</span>${tyreBadge(tyreAt(o.c.id, k)) || '<span></span>'}${o.finished ? '<span class="tag fin" title="Finished"></span>' : inPit(o.c.id, k) ? '<span class="tag pit" title="In the pit lane">P</span>' : ''}</div>`).join(''));
   const me = st.find(o => o.c.id === followId);
   document.getElementById('cardPos').textContent = me ? me.pos : '–';
   document.getElementById('cardStripe').style.background = colorOf(f);
   document.getElementById('cardName').textContent = f.name;
   const cur = now[followId];
-  setHTML('cardSub', tyreBadge(tyreAt(followId, k)) + (me?.finished ? `🏁 Finished · ${me.pos > 1 ? me.gap + ' to P' + (me.pos - 1) : 'Winner'}${f.ping ? ` · ${f.ping} ms` : ''}` : cur ? `Lap ${me ? me.lap : '–'} · ${me && me.pos > 1 ? me.gap + ' to P' + (me.pos - 1) : 'Leader'}${f.ping ? ` · ${f.ping} ms` : ''}` : 'Not on track'));
+  const ping = f.ping ? ` · ${f.ping} ms` : '';
+  const bestTxt = o => (isFinite(o.best) ? `best ${fmtLap(o.best)}` : 'no time yet');
+  if (QUALI) {
+    setHTML('cardSub', tyreBadge(tyreAt(followId, k)) + (!me ? 'Not on track'
+      : me.finished ? `🏁 Finished · ${bestTxt(me)}${ping}`
+      : !cur ? 'Not on track'
+      : me.outLap ? `Out lap · ${bestTxt(me)}${ping}`
+      : `Lap ${me.lap}/${LAPS} · ${fmtLap(me.running).replace(/(\.\d)\d\d$/, '$1')} · ${bestTxt(me)}${ping}`));
+    // Sectors of the lap in progress; after the last lap (or on the out lap) the last timed lap.
+    const lapShown = sectorLap(me);
+    setHTML('cardSecs', lapShown ? sectorBoxes(f, k, lapShown) : [1, 2, 3].map(j => `<span class="sec run"><small>S${j}</small><b>—</b></span>`).join(''));
+  }
+  else setHTML('cardSub', tyreBadge(tyreAt(followId, k)) + (me?.finished ? `🏁 Finished · ${me.pos > 1 ? me.gap + ' to P' + (me.pos - 1) : 'Winner'}${f.ping ? ` · ${f.ping} ms` : ''}` : cur ? `Lap ${me ? me.lap : '–'} · ${me && me.pos > 1 ? me.gap + ' to P' + (me.pos - 1) : 'Leader'}${f.ping ? ` · ${f.ping} ms` : ''}` : 'Not on track'));
   // Speed readout: smoothed and refreshed 4 times a second so it can be read.
   if (cur) f.vs = f.vs == null ? cur.v : f.vs + (cur.v - f.vs) * 0.35;
   if (wall - lastSpeed >= 250 || !playing) { lastSpeed = wall; setHTML('cardSpeed', cur ? String(Math.round(f.vs)) : '—'); }
@@ -798,14 +918,21 @@ function group(id, values, label, current, set) {
   }
 }
 group('speeds', [0.5, 1, 2, 4], v => v + '×', 1, v => { speed = v; });
-group('zooms', [0.3, 0.55, 0.9], v => ({ 0.3: 'Far', 0.55: 'Mid', 0.9: 'Close' })[v], 0.9, v => { zoom = v; });
-group('lagview', [true, false], v => (v ? 'As seen in game' : 'Raw'), true, v => { latency = v; lastOrder = []; hudDirty = true; });
+group('zooms', ZOOMS, v => ['Far', 'Mid', 'Close'][ZOOMS.indexOf(v)], ZOOMS[2], v => { zoom = v; });
+if (QUALI) for (const el of document.querySelectorAll('#lagview, .lagkey')) el.style.display = 'none';
+else group('lagview', [true, false], v => (v ? 'As seen in game' : 'Raw'), true, v => { latency = v; lastOrder = []; hudDirty = true; });
 renderDrivers(); renderSlots(); renderAssign();
 
 const seek = document.getElementById('seek'); seek.max = total - 1;
 seek.oninput = () => { t = +seek.value; lastOrder = []; hudDirty = true; draw(); };
 document.getElementById('play').onclick = () => setPlaying(!playing);
-document.getElementById('meta').textContent = `${DATA.trackName || 'Race'} · ${cars.length} drivers · ${LAPS} laps · 60 samples/s`;
+document.getElementById('meta').textContent = `${DATA.trackName || 'Race'} · ${cars.length} drivers · ${LAPS} ${QUALI ? 'qualifying ' : ''}lap${LAPS === 1 ? '' : 's'} · 60 samples/s`;
+if (QUALI) {
+  document.querySelector('.card').classList.add('quali');
+  document.querySelector('.tower').classList.add('quali');
+  document.querySelector('header h1').innerHTML = 'Qualifying <span>Replay</span>';
+  document.getElementById('note').textContent = "Positions are recorded at 60 per second from the lobby traffic and synced to the session clock. The order is by best lap, using the game's own lap times; the running lap time on the driver card is worked out from the replay, so it can differ by a few tenths.";
+}
 
 // ---- Keyboard shortcuts (press ? for the list)
 const keysPanel = document.getElementById('keys');
@@ -853,7 +980,7 @@ document.addEventListener('keydown', e => {
   else if (k === '-' || k === '_') pressGroup('speeds', -1);
   else if (k === '+' || k === '=') pressGroup('speeds', 1);
   else if (k === 'z' || k === 'Z') pressGroup('zooms', 'cycle');
-  else if (k === 'v' || k === 'V') pressGroup('lagview', 'cycle');
+  else if ((k === 'v' || k === 'V') && !QUALI) pressGroup('lagview', 'cycle');
   else if (k === 'm' || k === 'M') mini.style.visibility = mini.style.visibility === 'hidden' ? '' : 'hidden';
   else if (k === 'h' || k === 'H') for (const el of document.querySelectorAll('.tv')) el.style.visibility = el.style.visibility === 'hidden' ? '' : 'hidden';
   else if (k === 'f' || k === 'F') {
@@ -904,6 +1031,8 @@ document.addEventListener('keydown', e => {
 // ---- Full-quality track image (loaded by the viewer, not stored)
 {
   const id = String(DATA.track || '');
+  // Old "Road Course FA" tracks come in two halves (no single track.png to load).
+  if (id.startsWith('original/')) document.getElementById('trackq').hidden = true;
   document.getElementById('trackPath').textContent = /^\d+$/.test(id)
     ? `steamapps/workshop/content/1285230/${id}/track.png`
     : `steamapps/common/Ultimate Racing 2D 2/tracks/${id}/track.png`;

@@ -329,6 +329,26 @@ const CONFIG_PATH = path.join(__dirname, '../../config.json');
  * reports are switched on, and ONE generic announcement is posted for all
  * leagues. Idempotent: it only fires once per week (tracked in _meta).
  */
+// config_categorias.<cat> = { activo: true, round } written into the config.json
+// text in place; the whole file is only rewritten if that entry can't be found.
+function setRoundInText(text, cat, roundName) {
+    const start = text.indexOf('"config_categorias"');
+    const end = start < 0 ? -1 : text.indexOf('\n  }', start);
+    const entry = new RegExp(`("${cat}"\\s*:\\s*\\{)([^}]*)(\\})`);
+    if (start >= 0 && end > start && entry.test(text.slice(start, end))) {
+        const block = text.slice(start, end).replace(entry, (m, open, body, close) => {
+            body = body.replace(/("round"\s*:\s*")[^"]*(")/, `$1${roundName}$2`).replace(/("activo"\s*:\s*)(true|false)/, '$1true');
+            return open + body + close;
+        });
+        const out = text.slice(0, start) + block + text.slice(end);
+        const parsed = JSON.parse(out).config_categorias?.[cat];
+        if (parsed?.round === roundName && parsed.activo === true) return out;
+    }
+    const fresh = JSON.parse(text);
+    fresh.config_categorias[cat] = { ...(fresh.config_categorias[cat] || {}), activo: true, round: roundName };
+    return JSON.stringify(fresh, null, 2);
+}
+
 async function syncReports(client, config) {
     const now = Date.now();
     const weekStart = mondayUtc(new Date(now));
@@ -344,11 +364,10 @@ async function syncReports(client, config) {
 
     if (Object.keys(justRaced).length) {
         // Re-read from disk right before writing so we don't clobber a /setround.
-        const fresh = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
-        for (const [cat, roundName] of Object.entries(justRaced)) {
-            fresh.config_categorias[cat] = { ...(fresh.config_categorias[cat] || {}), activo: true, round: roundName };
-        }
-        fs.writeFileSync(CONFIG_PATH, JSON.stringify(fresh, null, 2));
+        // Only the round values change in the text, so the file keeps its hand-made layout.
+        let text = fs.readFileSync(CONFIG_PATH, 'utf-8');
+        for (const [cat, roundName] of Object.entries(justRaced)) text = setRoundInText(text, cat, roundName);
+        fs.writeFileSync(CONFIG_PATH, text);
 
         const channelId = config.canal_anuncios_reports_id;
         if (!channelId || channelId === '???') {

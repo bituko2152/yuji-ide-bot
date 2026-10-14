@@ -10,6 +10,9 @@
  * - Progress: one reference lap (a car's path from 45 s for one lap); every
  *   car is projected onto it, keeping continuity, and the lap count goes up
  *   at the line. The line is the pole sitter's grid slot + 30 px.
+ * - Qualifying: every car leaves from the pit lane, so the line is where the
+ *   first lap time (*11) arrived instead, and each car carries its lap times
+ *   and the frame its first timed lap started (the page orders by best lap).
  */
 
 const HZ = 60;
@@ -136,10 +139,19 @@ function progress(pts, cum, pos, lineS) {
     return p;
 }
 
+// Timed laps in qualifying: settings field 3 (after class, class, race laps), else the most laps anyone did.
+function qualiLaps(rec) {
+    const n = Number(rec.settings.qualiLaps);
+    if (n > 0) return n;
+    const per = {};
+    for (const e of rec.lapTimes) per[e.car] = (per[e.car] || 0) + 1;
+    return Math.max(1, ...Object.values(per));
+}
+
 const b64 = typed => Buffer.from(typed.buffer, typed.byteOffset, typed.byteLength).toString('base64');
 
 /** Builds the replay data, or null if there isn't enough of a race recorded. */
-function buildReplayData(rec) {
+function buildReplayData(rec, { qualifying = false } = {}) {
     if (!rec.settings || !rec.hasRace) return null;
     const drivers = rec.roster.filter(r => r.racing).sort((a, b) => a.idx - b.idx);
     const carIds = [...rec.cars.keys()].sort((a, b) => a - b);
@@ -164,17 +176,37 @@ function buildReplayData(rec) {
     if (pts.length < 50 || !isClosed(pts)) return null;
     const cum = cumulative(pts), L = cum[pts.length];
 
-    // The line: pole sitter's grid slot, 30 px ahead along the track.
-    const poleIdx = drivers.find(d => d.grid === 1)?.idx ?? 0;
-    const pole = pos.get(poleIdx + 1) || pos.get(carIds[0]);
-    const k0 = pole.x.findIndex(v => v !== NONE16);
-    const lineS = (project(pts, cum, [pole.x[k0], pole.y[k0]], null).s + 30) % L;
+    // The line: pole sitter's grid slot, 30 px ahead along the track. In
+    // qualifying nobody starts on the grid: where a car was when its first lap
+    // time arrived.
+    let lineS = null;
+    if (qualifying) {
+        for (const e of rec.lapTimes) {
+            const pp = pos.get(e.car), k = frameOf(e.at);
+            if (pp && k < frames && pp.x[k] !== NONE16) { lineS = project(pts, cum, [pp.x[k], pp.y[k]], null).s; break; }
+        }
+    }
+    if (lineS == null) {
+        const poleIdx = drivers.find(d => d.grid === 1)?.idx ?? 0;
+        const pole = pos.get(poleIdx + 1) || pos.get(carIds[0]);
+        const k0 = pole.x.findIndex(v => v !== NONE16);
+        lineS = (project(pts, cum, [pole.x[k0], pole.y[k0]], null).s + 30) % L;
+    }
 
     const cars = carIds.map(id => {
         const d = drivers[id - 1] || {};
-        const pp = pos.get(id);
-        return { id, name: d.name || `Car ${id}`, ping: d.ping || 0, livery: d.livery || id,
-            x: b64(pp.x), y: b64(pp.y), a: b64(pp.a), p: b64(progress(pts, cum, pp, lineS)) };
+        const pp = pos.get(id), pr = progress(pts, cum, pp, lineS);
+        const car = { id, name: d.name || `Car ${id}`, ping: d.ping || 0, livery: d.livery || id,
+            x: b64(pp.x), y: b64(pp.y), a: b64(pp.a), p: b64(pr) };
+        if (qualifying) {
+            // [frame, lap time] per completed lap, and the first crossing of the line (end of the out lap).
+            car.laps = rec.lapTimes.filter(e => e.car === id && e.time > 0).map(e => [frameOf(e.at), e.time]);
+            const k0 = pr.findIndex(v => v !== NONE32);
+            const lap0 = k0 < 0 ? 0 : Math.floor(pr[k0] / L);
+            const k1 = pr.findIndex(v => v !== NONE32 && Math.floor(v / L) > lap0);
+            car.timedFrom = k1 >= 0 ? k1 : (car.laps[0] ? car.laps[0][0] - Math.round(car.laps[0][1] * HZ) : null);
+        }
+        return car;
     });
 
     // Pit lane windows from the sector messages.
@@ -186,7 +218,8 @@ function buildReplayData(rec) {
     }
 
     return {
-        hz: HZ, frames, lapLen: Math.round(L), laps: rec.settings.laps,
+        session: qualifying ? 'qualifying' : 'race',
+        hz: HZ, frames, lapLen: Math.round(L), laps: qualifying ? qualiLaps(rec) : rec.settings.laps,
         track: rec.track, trackCandidates: [...rec.tracks, ...(rec.settings.workshopIds || [])], carClass: rec.settings.carClass,
         cars,
         tyres: rec.tyres.map(e => [frameOf(e.at), String(e.car), e.tyre]).filter(e => e[2]),

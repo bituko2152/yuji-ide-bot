@@ -16,6 +16,9 @@ const { extractSprites } = require('./gamemaker');
  *
  *   Track (Workshop id)    -> Workshop item files: track.png, minimap.png
  *   Track (official name)  -> game depot: assets/tracks/<name>/track.png, minimap.png, track_info.data
+ *   Track "original/<name>" -> game depot: assets/tracks_original/<name>/<name>_left.png + _right.png
+ *                             (joined side by side), <name>_minimap.png: the old "Road Course FA" tracks,
+ *                             which share names with tracks/ (original/italy = Monza, italy = Circus Maximus)
  *   Class (Workshop id)    -> Workshop item files: car_1.png ... car_10.png
  *   Class (official name)  -> game depot: assets/cars/<name>/car_1.png ... (if the class has a folder)
  * Classes built into the game itself (e.g. "formulaa") have no files: their
@@ -171,12 +174,43 @@ async function officialTracks() {
     return [...names].sort();
 }
 
+// Files of a track under the names used here (track.png, minimap.png, ...).
+async function trackFiles(track) {
+    if (/^\d+$/.test(track)) return listFiles(track);
+    const orig = String(track).match(/^original\/(.+)$/);
+    if (!orig) return listFiles(`tracks/${track}`);
+    const n = orig[1];
+    const { files } = await listFiles(`tracks_original/${n}`);
+    const out = {};
+    if (files[`${n}_minimap.png`]) out['minimap.png'] = files[`${n}_minimap.png`];
+    if (files[`${n}_left.png`] && files[`${n}_right.png`]) {
+        out['track.png'] = async () => {
+            const [l, r] = await Promise.all([files[`${n}_left.png`](), files[`${n}_right.png`]()].map(p => p.then(loadImage)));
+            const c = createCanvas(l.width + r.width, Math.max(l.height, r.height)), g = c.getContext('2d');
+            g.drawImage(l, 0, 0); g.drawImage(r, l.width, 0);
+            return c.encode('png');
+        };
+    }
+    return { title: n.replace(/_/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase()), files: out };
+}
+
+/** Old "Road Course FA" track folders (e.g. "italy" = Monza), as "original/<name>". */
+async function originalTracks() {
+    const user = await getSteamUser();
+    const names = new Set();
+    for (const f of (await gameFiles(user)).files) {
+        const m = f.filename.replace(/\\/g, '/').match(/^assets\/tracks_original\/([^/]+)\/\1_minimap\.png$/);
+        if (m) names.add(`original/${m[1]}`);
+    }
+    return [...names].sort();
+}
+
 /** Just a track's minimap (small, cached): used to find which track was raced. Null if none. */
 async function getMinimap(track) {
     const dir = path.join(CACHE, 'tracks', String(track).replace(/[^\w-]/g, '_'));
     const file = path.join(dir, 'minimap.png');
     if (fs.existsSync(file)) return fs.readFileSync(file);
-    const { files } = await listFiles(/^\d+$/.test(track) ? track : `tracks/${track}`);
+    const { files } = await trackFiles(track);
     if (!files['minimap.png']) return null;
     const buf = await files['minimap.png']();
     fs.mkdirSync(dir, { recursive: true });
@@ -196,8 +230,7 @@ async function getTrack(track) {
     const cached = readJson(metaFile);
     if (cached && fs.existsSync(trackFile)) return { ...cached, trackFile, miniFile: cached.miniW ? path.join(dir, 'minimap.png') : null };
 
-    const isWorkshop = /^\d+$/.test(track);
-    const { title, files } = await listFiles(isWorkshop ? track : `tracks/${track}`);
+    const { title, files } = await trackFiles(track);
     if (!files['track.png']) throw new Error(`No track.png for track "${track}"`);
 
     fs.mkdirSync(dir, { recursive: true });
@@ -337,4 +370,4 @@ function carLength(dir, png) {
     return null;
 }
 
-module.exports = { getTrack, getMinimap, getCarClass, officialTracks };
+module.exports = { getTrack, getMinimap, getCarClass, officialTracks, originalTracks };

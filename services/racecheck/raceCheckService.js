@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
+const { getWindow } = require('../starters/starterCalendar');
 
 /*
  * Weekly anonymous race check (e.g. OMRL on the mobile server).
@@ -21,7 +22,10 @@ const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, PermissionFl
  *     "lobby_limit": 18,   (only text: lobby is first come, first served)
  *     "limit": 18,         (optional: cap the check, the rest go to reserve)
  *     "open":  { "day": "wednesday", "time": "18:00" },   (UTC)
- *     "close": { "day": "saturday",  "time": "17:45" }    (UTC, first one after publishing)
+ *     "close": { "day": "saturday",  "time": "17:45" },   (UTC, first one after publishing)
+ *     "season": 9, "format": "AB",   (optional: follows the PC leagues' calendar, starters
+ *                                     "fecha_primera_carrera": round in the title, nothing on break weeks)
+ *     "skip_weeks": ["2026-10-14"]   (optional: publishing dates to skip, e.g. posted by hand)
  *   }]
  *
  * data/racechecks.json: { "<name>": { weekKey, messageId, closesAt, open,
@@ -68,6 +72,16 @@ function nextMoment(after, when) {
     return d;
 }
 
+// This week's round from the PC leagues' calendar ("S9A R3"); null on a break
+// week; undefined when the check doesn't follow the calendar.
+function roundOf(cfg, config, at) {
+    if (!cfg.season || !config.starters?.fecha_primera_carrera) return undefined;
+    const cal = { starters: { ...config.starters, temporada_inicial: { [cfg.name]: cfg.season }, formato: { [cfg.name]: cfg.format || 'AB' } } };
+    const w = getWindow(cfg.name, cal, at);
+    if (!w.open) return w.status === 'before' ? undefined : null;
+    return w.roundName.slice(cfg.name.length).replace(/R(\d+)$/, ' R$1');
+}
+
 const ts = (ms, f = 'F') => `<t:${Math.floor(ms / 1000)}:${f}>`;
 
 function publicView(cfg, rc) {
@@ -75,7 +89,7 @@ function publicView(cfg, rc) {
     const shown = limit ? `${Math.min(n, limit)} / ${limit}` : String(n);
     const embed = new EmbedBuilder()
         .setColor(rc.open ? '#3498db' : '#2b2d31')
-        .setTitle(`🏁 ${cfg.name} Race Check`)
+        .setTitle(`🏁 ${cfg.name} Race Check${rc.round ? ` · ${rc.round}` : ''}`)
         .setDescription(
             `Racing in ${cfg.name} this week? Press **Join**. **This is mandatory in order to race.**\n` +
             (limit ? `If the limit of ${limit} drivers is reached, it's first come, first served (the rest go to the reserve list).\n`
@@ -100,7 +114,7 @@ function participantsView(cfg, rc) {
     return {
         embeds: [new EmbedBuilder()
             .setColor('#3498db')
-            .setTitle(`🔒 ${cfg.name} Race Check · participants (${rc.drivers.length})`)
+            .setTitle(`🔒 ${cfg.name}${rc.round ? ` ${rc.round}` : ''} Race Check · participants (${rc.drivers.length})`)
             .setDescription((main + (reserve ? `\n\n**Reserve**\n${reserve}` : '')).slice(0, 4000))
             .setFooter({ text: rc.open ? 'Open' : 'Closed' })],
         allowedMentions: { parse: [] },
@@ -113,11 +127,11 @@ async function fetchMessage(client, channelId, messageId) {
     return ch && messageId ? ch.messages.fetch(messageId).catch(() => null) : null;
 }
 
-async function open(client, cfg, weekKey, closesAt) {
+async function open(client, cfg, weekKey, closesAt, round) {
     const channel = await client.channels.fetch(cfg.channel).catch(() => null);
     if (!channel) return console.error(`❌ [RaceCheck] ${cfg.name}: channel not found.`);
 
-    const rc = { weekKey, closesAt, open: true, drivers: [] };
+    const rc = { weekKey, closesAt, open: true, drivers: [], ...(round ? { round } : {}) };
     const message = await channel.send({
         ...(cfg.driver_role ? { content: `<@&${cfg.driver_role}>` } : {}),
         ...publicView(cfg, rc),
@@ -131,6 +145,7 @@ async function open(client, cfg, weekKey, closesAt) {
 
 async function tick(client) {
     const now = new Date();
+    const config = loadConfig();
     for (const cfg of checksConfig()) {
         try {
             const publishAt = weekMoment(now, cfg.open);
@@ -146,7 +161,10 @@ async function tick(client) {
             }
             const closesAt = nextMoment(publishAt, cfg.close).getTime();
             if (now >= publishAt && now.getTime() < closesAt && rc?.weekKey !== weekKey) {
-                await open(client, cfg, weekKey, closesAt);
+                // Skipped week (posted by hand) or break week in the calendar: nothing this week.
+                const round = roundOf(cfg, config, closesAt);
+                if ((cfg.skip_weeks || []).includes(weekKey) || round === null) continue;
+                await open(client, cfg, weekKey, closesAt, round);
             }
         } catch (err) {
             console.error(`❌ [RaceCheck] ${cfg.name}:`, err.message);

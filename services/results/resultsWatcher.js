@@ -10,7 +10,8 @@ const { renderReplay } = require('../replay/render');
 /*
  * League results: /results listen follows an online lobby and posts each
  * qualifying / race table as a CSV (human drivers only) to config
- * "resultados.canal_id", until the lobby closes or /results stop.
+ * "resultados.canal_id", each followed by its replay, until the lobby closes
+ * or /results stop.
  *
  * Listening is "hidden": the bot connects to the lobby on the master server
  * but never introduces itself as a player, so it takes no seat and nobody
@@ -110,6 +111,10 @@ function watch(client, lobby, channelId) {
         if (csv.split('\n').length <= 2) return; // header only: no human drivers
         if (posted.has(csv)) return;
         posted.add(csv);
+        // The replay data is taken now, before any await: the next session's
+        // settings (*33|1) start a new recording.
+        const what = isRace ? 'race' : 'qualifying';
+        const replay = takeReplay(what);
 
         const channel = await client.channels.fetch(channelId).catch(() => null);
         if (!channel) return console.warn(`⚠️ [Results] Channel ${channelId} not found.`);
@@ -118,21 +123,28 @@ function watch(client, lobby, channelId) {
         const fileName = `${base}_${isRace ? 'race' : 'qualifying'}.csv`;
         await channel.send({ files: [new AttachmentBuilder(Buffer.from(csv, 'utf-8'), { name: fileName })] })
             .catch(err => console.error('❌ [Results]', err.message));
-        if (!isRace) return;
         // The replay goes in its own message right after the CSV (which is left untouched).
-        const msg = await channel.send('🎬 Generating the race replay…').catch(err => console.error('❌ [Results]', err.message));
-        if (msg) await attachReplay(msg, base);
+        const msg = await channel.send(`🎬 Generating the ${what} replay…`).catch(err => console.error('❌ [Results]', err.message));
+        if (msg) await attachReplay(msg, base, what, replay);
     }
 
-    async function attachReplay(msg, base) {
+    function takeReplay(what) {
         try {
-            console.log(`🎬 [Replay] ${lobby.name}: ${recorder.summary()}`);
+            console.log(`🎬 [Replay] ${lobby.name} (${what}): ${recorder.summary()}`);
             const why = recorder.whyNoReplay();
-            const data = why ? null : buildReplayData(recorder);
+            return { why, data: why ? null : buildReplayData(recorder, { qualifying: what === 'qualifying' }) };
+        } catch (error) {
+            return { error };
+        }
+    }
+
+    async function attachReplay(msg, base, what, { why, data, error }) {
+        try {
+            if (error) throw error;
             if (!data) return void await msg.edit({ content: `⚠️ No replay: ${why || 'couldn\'t find a full lap in the recording.'}` });
             const { html, trackName } = await renderReplay(data, { lobbyName: lobby.name });
             const plain = trackName.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w-]+/g, '_');
-            const name = `${base}_${plain}_replay.html`;
+            const name = `${base}_${plain}_${what}_replay.html`;
             await msg.edit({ content: '', files: [new AttachmentBuilder(Buffer.from(html, 'utf-8'), { name })] });
         } catch (err) {
             console.error('❌ [Results] Replay:', err);

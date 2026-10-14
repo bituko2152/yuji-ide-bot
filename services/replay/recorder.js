@@ -11,6 +11,7 @@
  *   8|<car>|<frame>|<x>|<y>|<angle>|<vx>|<vy>                       car position, ~60/s
  *   37|1|<car>|<compound>                                          tyres
  *   13|<car>|<lap>|0|<sector>|<pit>|<pit>|...                       sectors, pit lane
+ *   11|<car>|<lap time>|<total, 0 until finished>                  lap completed (the game's time)
  *   36|<gauge>|<change per frame>|<wetness>|...                     weather gauge
  *   39|spr_weather_<state>                                          forecast ("Coming soon")
  * Times are stored as the local receive time (ms); the builder turns them
@@ -30,6 +31,7 @@ class RaceRecorder {
         this.cars = new Map();   // car number -> { frame: [], x: [], y: [], a: [], at: [] }
         this.tyres = [];         // { at, car, tyre }
         this.sectors = [];       // { at, car, pit }
+        this.lapTimes = [];      // { at, car, time } every completed lap
         this.gauge = [];         // { at, v, d, w }
         this.forecast = [];      // { at, state }
         this.seen = new Set();   // reliable message ids (resends)
@@ -54,9 +56,10 @@ class RaceRecorder {
             case '33':
                 // Raw session messages, for the console (where does the game say the track?).
                 if (f[1] !== '3') console.log(`🎬 [Replay] *${f.join('|').slice(0, 400)}`);
-                if (f[1] === '1') {
+                // *33|1|1 is the copy sent to a driver joining mid-session: same session, keep recording.
+                if (f[1] === '1' && f[2] !== '1') {
                     this.reset();
-                    this.settings = { carClass: f[3], laps: Number(f[5]), trackIndex: Number(f[9]), raw: f.slice(2, 14).join('|'),
+                    this.settings = { carClass: f[3], laps: Number(f[5]), qualiLaps: Number(f[9]), trackIndex: Number(f[9]), raw: f.slice(2, 14).join('|'),
                         // Any Workshop id in the settings (other than the class) could be the track.
                         workshopIds: f.slice(2).filter((v, i) => /^\d{9,11}$/.test(v) && v !== f[3]) };
                 } else if (f[1] === '2') {
@@ -70,6 +73,9 @@ class RaceRecorder {
                 break;
             case '13':
                 this.sectors.push({ at, car: Number(f[1]), pit: f[5] === '1' || f[6] === '1' });
+                break;
+            case '11':
+                this.lapTimes.push({ at, car: Number(f[1]), time: Number(f[2]) });
                 break;
             case '36':
                 this.gauge.push({ at, v: Number(f[1]), d: Number(f[2]), w: Number(f[3]) });

@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 const { createCanvas, loadImage } = require('@napi-rs/canvas');
-const { getTrack, getMinimap, getCarClass, officialTracks } = require('./assets');
+const { getTrack, getMinimap, getCarClass, officialTracks, originalTracks } = require('./assets');
 
 /*
  * Fills assets/replay/template.html with a race: replay data from the
@@ -74,12 +74,28 @@ async function minimapScore(buf, pts) {
     g.drawImage(img, 0, 0);
     const alpha = g.getImageData(0, 0, W, H).data;
     const on = (x, y) => x >= 0 && y >= 0 && x < W && y < H && alpha[(y * W + x) * 4 + 3] > 40;
+    // The drawing's pixels (sampled), to check the cars also cover the whole
+    // track: a thick band (Circus Maximus) can hold most points of another
+    // track squashed into it, but they only cover part of it.
+    const step = Math.max(1, Math.round(W / 200)), R = Math.max(3, Math.round(W / 60));
+    const drawn = [];
+    for (let y = 0; y < H; y += step) for (let x = 0; x < W; x += step) if (on(x, y)) drawn.push([Math.floor(x / R), Math.floor(y / R)]);
     let best = 0;
     for (let worldW = 2500; worldW <= 16000; worldW *= 1.004) {
         const s = W / worldW;
         let hits = 0;
-        for (const [x, y] of pts) if (on(Math.round(x * s), Math.round(y * s))) hits++;
-        best = Math.max(best, hits / pts.length);
+        const near = new Set();
+        for (const [x, y] of pts) {
+            const X = Math.round(x * s), Y = Math.round(y * s);
+            if (on(X, Y)) hits++;
+            near.add(`${Math.floor(X / R)},${Math.floor(Y / R)}`);
+        }
+        if (hits / pts.length <= best) continue;
+        let covered = 0;
+        for (const [gx, gy] of drawn) {
+            search: for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) if (near.has(`${gx + i},${gy + j}`)) { covered++; break search; }
+        }
+        best = Math.max(best, Math.min(hits / pts.length, drawn.length ? covered / drawn.length : 0));
     }
     return best;
 }
@@ -100,7 +116,13 @@ async function identifyTrack(data, pts) {
     let candidates = [...new Set([data.track, ...(data.trackCandidates || [])].filter(Boolean))];
     // No championship list from the lobby: every official track plus the
     // league's Workshop tracks (config "records.circuitos_workshop").
-    if (!candidates.length) candidates = [...leagueWorkshopTracks(), ...await officialTracks()];
+    if (!candidates.length) candidates = [...leagueWorkshopTracks(), ...await officialTracks(), ...await originalTracks()];
+    // An official name can also be an old "Road Course FA" track of the same
+    // name (italy: Circus Maximus, original/italy: Monza): try both.
+    else {
+        const originals = new Set(await originalTracks().catch(() => []));
+        candidates = candidates.flatMap(t => (originals.has(`original/${t}`) ? [t, `original/${t}`] : [t]));
+    }
     if (candidates.length === 1) return candidates[0];
     const sample = pts.length > 400 ? pts.filter((_, i) => i % Math.ceil(pts.length / 400) === 0) : pts;
     const scores = [];
@@ -136,7 +158,12 @@ async function renderReplay(data, { lobbyName } = {}) {
     let mini;
     if (track.miniFile) {
         mini = await fitMinimap(track.miniFile, track, drivenPoints(data));
-        mini.src = dataUri(fs.readFileSync(track.miniFile), 'image/png');
+        // Some minimaps are as big as the world (5250 x 2000) but shown at
+        // most ~280 px wide: embedded at MINI_WIDTH, as webp (keeps transparency).
+        const img = await loadImage(fs.readFileSync(track.miniFile));
+        const k = Math.min(1, MINI_WIDTH / img.width);
+        mini = { ...mini, s: mini.s * k, ox: mini.ox * k, oy: mini.oy * k, w: Math.round(mini.w * k), h: Math.round(mini.h * k) };
+        mini.src = dataUri(await encodeMap(img, mini.w, 90), 'image/webp');
     } else {
         // No minimap image: the map itself, small.
         const w = 512, h = Math.round(512 * track.worldH / track.worldW);
@@ -160,14 +187,14 @@ async function renderReplay(data, { lobbyName } = {}) {
         builtInClass: builtIn,
         carLen, // car length on track (world px) for this class, if known
     };
-    const title = `${track.name} — Race Replay`;
+    const title = `${track.name} — ${data.session === 'qualifying' ? 'Qualifying' : 'Race'} Replay`;
     const page = fs.readFileSync(TEMPLATE, 'utf-8')
         .replace('/*__REPLAY_DATA__*/null', () => JSON.stringify(full).replace(/</g, '\\u003c'))
         .replace('/*__REPLAY_TITLE__*/', () => title.replace(/[<&]/g, ''));
 
-    // Map embedded at a reduced size to keep the file small; the page has a
-    // button to load the full-quality track.png from the viewer's own PC.
-    const w = Math.min(MAP_WIDTH, track.worldW);
+    // The map at the game's own resolution, up to MAP_PIXELS (very big worlds
+    // are reduced; the page can load the full track.png from the viewer's PC).
+    const w = Math.min(track.worldW, Math.floor(Math.sqrt(MAP_PIXELS * track.worldW / track.worldH)));
     const mapBuf = await encodeMap(trackImg, w, MAP_QUALITY);
     const html = page
         .replace(`"s":1,"w":${track.worldW},"h":${track.worldH}`, `"s":${w / track.worldW},"w":${w},"h":${Math.round(track.worldH * w / track.worldW)}`)
@@ -176,8 +203,9 @@ async function renderReplay(data, { lobbyName } = {}) {
 }
 
 const MAP_TOKEN = '__REPLAY_MAP__';
-const MAP_WIDTH = 3072;
 const MAP_QUALITY = 72;
+const MAP_PIXELS = 16e6;   // ~3.3 MB of webp for a detailed 4600 x 3400 track, 1.5 MB for Barcelona
+const MINI_WIDTH = 1024;
 
 async function encodeMap(img, w, quality) {
     const h = Math.round(img.height * w / img.width), c = createCanvas(w, h);
