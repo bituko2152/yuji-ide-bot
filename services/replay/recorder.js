@@ -59,7 +59,9 @@ class RaceRecorder {
                 // *33|1|1 is the copy sent to a driver joining mid-session: same session, keep recording.
                 if (f[1] === '1' && f[2] !== '1') {
                     this.reset();
+                    // f[30] race mode ("Lapped races", or by time) and f[31] its duration in s (300 = 5:00).
                     this.settings = { carClass: f[3], laps: Number(f[5]), qualiLaps: Number(f[9]), trackIndex: Number(f[9]), raw: f.slice(2, 14).join('|'),
+                        mode: f[30] || null, duration: Number(f[31]) || null,
                         // Any Workshop id in the settings (other than the class) could be the track.
                         workshopIds: f.slice(2).filter((v, i) => /^\d{9,11}$/.test(v) && v !== f[3]) };
                 } else if (f[1] === '2') {
@@ -75,7 +77,7 @@ class RaceRecorder {
                 this.sectors.push({ at, car: Number(f[1]), pit: f[5] === '1' || f[6] === '1' });
                 break;
             case '11':
-                this.lapTimes.push({ at, car: Number(f[1]), time: Number(f[2]) });
+                this.lapTimes.push({ at, car: Number(f[1]), time: Number(f[2]), total: Number(f[3]) || 0 });
                 break;
             case '36':
                 this.gauge.push({ at, v: Number(f[1]), d: Number(f[2]), w: Number(f[3]) });
@@ -111,7 +113,7 @@ class RaceRecorder {
     /** One line for the console: what the lobby sent this session. */
     summary() {
         const top = Object.entries(this.counts).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([t, n]) => `*${t}:${n}`).join(' ');
-        return `settings=${this.settings ? this.settings.raw : 'no'} tracks=${this.tracks.join(',')} track=${this.track} cars=${this.cars.size} msgs ${top}`;
+        return `settings=${this.settings ? `${this.settings.raw} mode=${this.settings.mode}/${this.settings.duration}` : 'no'} tracks=${this.tracks.join(',')} track=${this.track} cars=${this.cars.size} msgs ${top}`;
     }
 }
 

@@ -308,6 +308,12 @@ async function getCarClass(carClass) {
         : [];
 
     let cars = list(dir);
+    // A download cut halfway leaves a broken PNG in the cache: drop the class and fetch it again.
+    if (cars.some(b => !isPng(b))) {
+        console.warn(`⚠️ [Replay] Car class "${carClass}": broken image in the cache, downloading it again.`);
+        fs.rmSync(dir, { recursive: true, force: true });
+        cars = [];
+    }
     if (cars.length) {
         // Cached before the size was read: fetch the class's info file once
         // (built-in classes have none).
@@ -325,12 +331,18 @@ async function getCarClass(carClass) {
         const names = Object.keys(files).filter(n => /^car_\d+\.png$/.test(n));
         if (names.length) {
             fs.mkdirSync(dir, { recursive: true });
-            for (const n of names) fs.writeFileSync(path.join(dir, n), await files[n]());
+            for (const n of names) {
+                const buf = await files[n]();
+                if (!isPng(buf)) throw new Error(`${n} downloaded incomplete`);
+                fs.writeFileSync(path.join(dir, n), buf);
+            }
             for (const n of CLASS_INFO) if (files[n]) fs.writeFileSync(path.join(dir, n), await files[n]());
             cars = list(dir);
         }
     } catch (err) {
         console.warn(`⚠️ [Replay] Car class "${carClass}":`, err.message);
+        fs.rmSync(dir, { recursive: true, force: true }); // nothing half-downloaded stays cached
+        cars = [];
     }
     if (!cars.length && !/^\d+$/.test(carClass)) {
         try {
@@ -352,7 +364,11 @@ async function getCarClass(carClass) {
 //   class_info.data  official and newer Workshop classes, binary: 4 little-endian doubles
 // Without either the replay keeps its default.
 const CLASS_INFO = ['item.data', 'class_info.data'];
+// A whole PNG: signature and header (the size is read from it).
+const isPng = b => b?.length > 33 && b.readUInt32BE(0) === 0x89504e47 && b.toString('latin1', 12, 16) === 'IHDR';
+
 function carLength(dir, png) {
+    if (!isPng(png)) return null;
     const w = png.readUInt32BE(16), h = png.readUInt32BE(20);
     const len = (factor, scale) => (factor > 0.2 && factor < 3 && scale > 0.05 && scale < 3 ? Math.round(w * factor * scale * 10) / 10 : null);
     try {

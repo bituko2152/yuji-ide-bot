@@ -148,11 +148,28 @@ function qualiLaps(rec) {
     return Math.max(1, ...Object.values(per));
 }
 
+// Race by time instead of laps: the settings' race mode isn't "Lapped races".
+const isTimed = st => !!st.mode && !/lap/i.test(st.mode) && st.duration > 0;
+
+// Laps of a race by time: the most laps any car finished (its *11 with the
+// total time is its last lap); before results, the most laps completed.
+function timedLaps(rec) {
+    const per = {}, finished = {};
+    for (const e of rec.lapTimes) {
+        if (finished[e.car]) continue;
+        per[e.car] = (per[e.car] || 0) + 1;
+        if (e.total > 0) finished[e.car] = per[e.car];
+    }
+    const done = Object.values(finished);
+    return Math.max(1, ...(done.length ? done : Object.values(per)));
+}
+
 const b64 = typed => Buffer.from(typed.buffer, typed.byteOffset, typed.byteLength).toString('base64');
 
 /** Builds the replay data, or null if there isn't enough of a race recorded. */
 function buildReplayData(rec, { qualifying = false } = {}) {
     if (!rec.settings || !rec.hasRace) return null;
+    const timed = !qualifying && isTimed(rec.settings);
     const drivers = rec.roster.filter(r => r.racing).sort((a, b) => a.idx - b.idx);
     const carIds = [...rec.cars.keys()].sort((a, b) => a - b);
     const series = new Map(carIds.map(id => [id, carTimes(rec.cars.get(id))]));
@@ -219,7 +236,9 @@ function buildReplayData(rec, { qualifying = false } = {}) {
 
     return {
         session: qualifying ? 'qualifying' : 'race',
-        hz: HZ, frames, lapLen: Math.round(L), laps: qualifying ? qualiLaps(rec) : rec.settings.laps,
+        hz: HZ, frames, lapLen: Math.round(L), laps: qualifying ? qualiLaps(rec) : timed ? timedLaps(rec) : rec.settings.laps,
+        // Race by time: the clock it ran for (s); laps = what the winner actually did.
+        ...(timed ? { duration: rec.settings.duration } : {}),
         track: rec.track, trackCandidates: [...rec.tracks, ...(rec.settings.workshopIds || [])], carClass: rec.settings.carClass,
         cars,
         tyres: rec.tyres.map(e => [frameOf(e.at), String(e.car), e.tyre]).filter(e => e[2]),

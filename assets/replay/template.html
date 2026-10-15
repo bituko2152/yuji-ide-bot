@@ -192,7 +192,7 @@ details.liv summary { cursor: pointer; font-family: var(--font-display); font-we
     <canvas id="cv" aria-label="Onboard view following the selected driver"></canvas>
     <div class="tv wx-alert" id="wxAlert" role="status" aria-live="polite"></div>
     <div class="tv tower" aria-label="Timing tower">
-      <div class="head"><span class="lbl">LAP</span><span class="lap" id="towerLap">1<span>/10</span></span></div>
+      <div class="head"><span class="lbl" id="towerLbl">LAP</span><span class="lap" id="towerLap">1<span>/10</span></span></div>
       <div class="rows" id="rows"></div>
     </div>
     <div class="tv card" aria-label="Followed driver">
@@ -850,7 +850,10 @@ function draw() {
     setHTML('towerLap', !m || m.outLap ? 'OUT' : `${m.lap}<span>/${LAPS}</span>`);
   } else {
     const lap = lead ? lead.lap : 1;
-    setHTML('towerLap', `${lap}<span>/${LAPS}</span>`);
+    // Race by time: the clock counts down; once it runs out, the lap count (final lap).
+    const left = DATA.duration ? DATA.duration - k / HZ : 0;
+    setHTML('towerLbl', left > 0 ? 'TIME' : 'LAP');
+    setHTML('towerLap', left > 0 ? `${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')}` : `${lap}<span>/${LAPS}</span>`);
   }
   document.querySelector('.tower').style.setProperty('--rows', st.length);
   setHTML('rows', st.map(o =>
@@ -926,7 +929,7 @@ renderDrivers(); renderSlots(); renderAssign();
 const seek = document.getElementById('seek'); seek.max = total - 1;
 seek.oninput = () => { t = +seek.value; lastOrder = []; hudDirty = true; draw(); };
 document.getElementById('play').onclick = () => setPlaying(!playing);
-document.getElementById('meta').textContent = `${DATA.trackName || 'Race'} · ${cars.length} drivers · ${LAPS} ${QUALI ? 'qualifying ' : ''}lap${LAPS === 1 ? '' : 's'} · 60 samples/s`;
+document.getElementById('meta').textContent = `${DATA.trackName || 'Race'} · ${cars.length} drivers · ${DATA.duration ? `${fmt(DATA.duration).replace(/\.0$/, '')} race, ${LAPS} laps` : `${LAPS} ${QUALI ? 'qualifying ' : ''}lap${LAPS === 1 ? '' : 's'}`} · 60 samples/s`;
 if (QUALI) {
   document.querySelector('.card').classList.add('quali');
   document.querySelector('.tower').classList.add('quali');
