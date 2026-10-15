@@ -5,7 +5,7 @@ const { EmbedBuilder, MessageFlags, escapeMarkdown } = require('discord.js');
 
 /*
  * Live list of Ultimate Racing 2D 2 online lobbies, the same message in every
- * channel of config "canales_lobbies" (can be in different servers),
+ * channel of config "lobby_channels" (can be in different servers),
  * refreshed every few minutes: edited in place while it's the last message,
  * re-posted (silently, old copy deleted) once someone writes below it.
  *
@@ -52,9 +52,9 @@ function writeMessageIds(ids) {
     fs.writeFileSync(storeFile, JSON.stringify(ids));
 }
 
-// canales_lobbies: list of channel ids, in any server the bot is in.
+// lobby_channels: list of channel ids, in any server the bot is in.
 function lobbyChannelIds(config) {
-    return (config.canales_lobbies || []).filter(id => id && id !== '???');
+    return (config.lobby_channels || []).filter(id => id && id !== '???');
 }
 
 // ---------------------------------------------------------------- protocol

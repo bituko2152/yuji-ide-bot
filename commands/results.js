@@ -4,12 +4,12 @@ const { SlashCommandBuilder } = require('discord.js');
 const R = require('../services/results/resultsWatcher');
 const U = require('../services/results/resultsUpload');
 
-// Only in the results channel (config "resultados.canal_id"), and only for
-// members with one of config "resultados.roles_permitidos"
-// (/results upload: "resultados.roles_subida" instead).
+// Only in the results channel (config "results.channel"), and only for
+// members with one of config "results.allowed_roles"
+// (/results upload: "results.upload_roles" instead).
 function resultsConfig() {
     const config = JSON.parse(fs.readFileSync(path.join(__dirname, '../config.json'), 'utf-8'));
-    return config.resultados || {};
+    return config.results || {};
 }
 
 const LEAGUES = ['UL', 'CL', 'JL', 'AL'];
@@ -19,7 +19,7 @@ const DEFAULT_DIVISION_LEAGUES = ['JL', 'AL']; // seasons split in A/B
 async function upload(interaction, cfg) {
     const league = interaction.options.getString('league');
     const division = interaction.options.getString('division');
-    const needsDivision = (cfg.ligas_division || DEFAULT_DIVISION_LEAGUES).includes(league);
+    const needsDivision = (cfg.division_leagues || DEFAULT_DIVISION_LEAGUES).includes(league);
     if (needsDivision && !division) {
         return interaction.reply({ content: `❌ ${league} seasons are split in A/B: set the \`division\` option.`, ephemeral: true });
     }
@@ -38,7 +38,7 @@ async function upload(interaction, cfg) {
             race: interaction.options.getAttachment('race'),
             quali: interaction.options.getAttachment('quali'),
             q2: interaction.options.getAttachment('q2'),
-            needsQ2: (cfg.ligas_q2 || DEFAULT_Q2_LEAGUES).includes(league)
+            needsQ2: (cfg.q2_leagues || DEFAULT_Q2_LEAGUES).includes(league)
         });
         return interaction.editReply(U.previewMessage(plan));
     } catch (err) {
@@ -99,13 +99,13 @@ module.exports = {
 
     async execute(interaction) {
         const cfg = resultsConfig();
-        if (interaction.channelId !== cfg.canal_id) {
-            const where = cfg.canal_id ? `<#${cfg.canal_id}>` : 'the results channel (config "resultados.canal_id" is not set)';
+        if (interaction.channelId !== cfg.channel) {
+            const where = cfg.channel ? `<#${cfg.channel}>` : 'the results channel (config "results.channel" is not set)';
             return interaction.reply({ content: `❌ This command can only be used in ${where}.`, ephemeral: true });
         }
 
         const isUpload = interaction.options.getSubcommand() === 'upload';
-        const roles = (isUpload ? cfg.roles_subida : cfg.roles_permitidos) || [];
+        const roles = (isUpload ? cfg.upload_roles : cfg.allowed_roles) || [];
         if (!roles.some(id => interaction.member.roles.cache.has(id))) {
             return interaction.reply({ content: '❌ You are not allowed to use this command.', ephemeral: true });
         }

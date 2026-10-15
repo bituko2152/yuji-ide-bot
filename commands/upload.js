@@ -11,7 +11,7 @@ const { SlashCommandBuilder } = require('discord.js');
  *   https://ur2d-replays.mika2mika.workers.dev/<league>/s<season>[a|b]/r<round>[-sprint|-quali|-quali2].html
  * header "x-upload-key" = .env REPLAYS_UPLOAD_KEY. The same address again
  * replaces the file. No copy is kept: the file stays in Discord.
- * Same channel and roles as /results upload ("resultados.canal_id", "resultados.roles_subida").
+ * Same channel and roles as /results upload ("results.channel", "results.upload_roles").
  */
 
 const WORKER = 'https://ur2d-replays.mika2mika.workers.dev';
@@ -21,7 +21,7 @@ const Q2_LEAGUES = ['UL', 'CL'];         // also a Q2 ("quali2"), as in /results
 const SUFFIX = { race: '', sprint: '-sprint', quali: '-quali', quali2: '-quali2' };
 const isQuali = session => session === 'quali' || session === 'quali2';
 
-const resultsConfig = () => JSON.parse(fs.readFileSync(path.join(__dirname, '../config.json'), 'utf-8')).resultados || {};
+const resultsConfig = () => JSON.parse(fs.readFileSync(path.join(__dirname, '../config.json'), 'utf-8')).results || {};
 
 function replayPath(league, season, division, round, session) {
     return `${league.toLowerCase()}/s${season}${division ? division.toLowerCase() : ''}/r${round}${SUFFIX[session]}.html`;
@@ -86,11 +86,11 @@ module.exports = {
 
     async execute(interaction) {
         const cfg = resultsConfig();
-        if (interaction.channelId !== cfg.canal_id) {
-            const where = cfg.canal_id ? `<#${cfg.canal_id}>` : 'the results channel (config "resultados.canal_id" is not set)';
+        if (interaction.channelId !== cfg.channel) {
+            const where = cfg.channel ? `<#${cfg.channel}>` : 'the results channel (config "results.channel" is not set)';
             return interaction.reply({ content: `❌ This command can only be used in ${where}.`, ephemeral: true });
         }
-        if (!(cfg.roles_subida || []).some(id => interaction.member.roles.cache.has(id))) {
+        if (!(cfg.upload_roles || []).some(id => interaction.member.roles.cache.has(id))) {
             return interaction.reply({ content: '❌ You are not allowed to use this command.', ephemeral: true });
         }
         if (!process.env.REPLAYS_UPLOAD_KEY) {
@@ -104,7 +104,7 @@ module.exports = {
         if (needsDivision && !division) return interaction.reply({ content: `❌ ${league} seasons are split in A/B: set \`division\`.`, ephemeral: true });
         if (!needsDivision && division) return interaction.reply({ content: `❌ ${league} has no divisions: leave \`division\` empty.`, ephemeral: true });
 
-        const twoPart = (cfg.ligas_q2 || Q2_LEAGUES).includes(league);
+        const twoPart = (cfg.q2_leagues || Q2_LEAGUES).includes(league);
         if (session === 'quali2' && !twoPart) return interaction.reply({ content: `❌ ${league} has no Q2.`, ephemeral: true });
 
         const target = replayPath(league, interaction.options.getInteger('season'), division, interaction.options.getInteger('round'), session);

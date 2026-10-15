@@ -321,6 +321,8 @@ function createLobbyHost({ name, password = '', carClass = 'formulaa', className
                 if (!p) return;
                 players.splice(players.indexOf(p), 1);
                 log(`➖ [Mocks] ${p.name} left`);
+                // Everybody of the session's grid gone: end it now (else it waits for the safety timeout).
+                if (session && !session.grid.some(g => byId(g.id))) endSession('everybody left');
                 sendSettings();
                 sendRoster();
                 toAll('*28', 2, p.name);

@@ -4,12 +4,12 @@ const { EmbedBuilder } = require('discord.js');
 
 /*
  * Announces new developer posts (patch notes, updates...) from Steam, for
- * each game listed in config.json "noticias_steam", each in its own channel
+ * each game listed in config.json "steam_news", each in its own channel
  * (which can be in any server the bot is in):
  *
- *   "noticias_steam": [
- *     { "appid": 1285230, "nombre": "Ultimate Racing 2D 2", "canal_id": "..." },
- *     { "appid": 3230780, "nombre": "Ultimate Rally 2D",   "canal_id": "..." }
+ *   "steam_news": [
+ *     { "appid": 1285230, "name": "Ultimate Racing 2D 2", "channel": "..." },
+ *     { "appid": 3230780, "name": "Ultimate Rally 2D",   "channel": "..." }
  *   ]
  *
  * Uses ISteamNews/GetNewsForApp (keyless), limited to the
@@ -109,7 +109,7 @@ function buildEmbed(game, item, fallbackImage) {
 
     const embed = new EmbedBuilder()
         .setColor('#66c0f4')
-        .setAuthor({ name: `${game.nombre} · Steam news` })
+        .setAuthor({ name: `${game.name} · Steam news` })
         .setTitle(`📰 ${item.title}`)
         .setURL(`https://store.steampowered.com/news/app/${game.appid}/view/${item.gid}`)
         .setFooter({ text: item.author ? `Posted by ${item.author}` : 'Steam' })
@@ -135,8 +135,8 @@ function buildSaleEmbed(game, usd, eur, image) {
     const price = p => `~~${p.initial_formatted}~~ **${p.final_formatted}**`;
     const embed = new EmbedBuilder()
         .setColor('#4c6b22')
-        .setAuthor({ name: `${game.nombre} · Steam sale` })
-        .setTitle(`💸 ${game.nombre} is ${usd.discount_percent}% off!`)
+        .setAuthor({ name: `${game.name} · Steam sale` })
+        .setTitle(`💸 ${game.name} is ${usd.discount_percent}% off!`)
         .setURL(`https://store.steampowered.com/app/${game.appid}/`)
         .setDescription([usd, eur].filter(Boolean).map(price).join(' · '))
         .setTimestamp();
@@ -148,7 +148,7 @@ function buildSaleEmbed(game, usd, eur, image) {
 // A discount is announced when it starts; if its % changes the message is
 // updated, and when it ends the message is deleted (known.saleMsg tracks it).
 async function checkSale(client, game, store) {
-    if (!game.canal_id || game.canal_id === '???') return;
+    if (!game.channel || game.channel === '???') return;
 
     const usd = await fetchPrice(game.appid, 'us');
     // No price at all (unreleased, or Steam answered without data): don't treat
@@ -161,7 +161,7 @@ async function checkSale(client, game, store) {
     known.discount = discount;
     if (discount === previous) return;
 
-    const channel = await client.channels.fetch(game.canal_id).catch(() => null);
+    const channel = await client.channels.fetch(game.channel).catch(() => null);
     if (!channel) return;
 
     // Sale over: remove its announcement.
@@ -172,11 +172,11 @@ async function checkSale(client, game, store) {
             const err = await channel.messages.delete(known.saleMsg).then(() => null, e => e);
             if (err && err.code !== 10008) {
                 known.discount = previous;
-                console.error(`❌ [News] ${game.nombre}: couldn't delete the sale announcement (${err.message}), retrying.`);
+                console.error(`❌ [News] ${game.name}: couldn't delete the sale announcement (${err.message}), retrying.`);
                 return;
             }
             delete known.saleMsg;
-            console.log(`💸 [News] ${game.nombre}: sale ended, announcement deleted`);
+            console.log(`💸 [News] ${game.name}: sale ended, announcement deleted`);
         }
         return;
     }
@@ -190,19 +190,19 @@ async function checkSale(client, game, store) {
     // Different % during the same sale: update the existing message.
     const edited = known.saleMsg && await channel.messages.edit(known.saleMsg, payload).catch(() => null);
     if (edited) {
-        console.log(`💸 [News] ${game.nombre}: sale updated to ${discount}%`);
+        console.log(`💸 [News] ${game.name}: sale updated to ${discount}%`);
         return;
     }
 
     const sent = await channel.send(payload);
     known.saleMsg = sent.id;
-    console.log(`💸 [News] ${game.nombre}: announced ${discount}% sale`);
+    console.log(`💸 [News] ${game.name}: announced ${discount}% sale`);
 }
 
 // ---------------------------------------------------------------- loop
 
 async function checkGame(client, game, store) {
-    if (!game.canal_id || game.canal_id === '???') return;
+    if (!game.channel || game.channel === '???') return;
 
     const news = await fetchNews(game.appid);
     const known = store[game.appid];
@@ -210,16 +210,16 @@ async function checkGame(client, game, store) {
     if (!known) {
         // First run for this game (even with no posts yet, so its very first post IS announced).
         store[game.appid] = { seen: news.map(n => n.gid).slice(0, REMEMBER) };
-        console.log(`📰 [News] ${game.nombre}: first run, remembered ${news.length} existing posts.`);
+        console.log(`📰 [News] ${game.name}: first run, remembered ${news.length} existing posts.`);
         return;
     }
 
     const fresh = news.filter(n => !known.seen.includes(n.gid)).sort((a, b) => a.date - b.date);
     if (!fresh.length) return;
 
-    const channel = await client.channels.fetch(game.canal_id).catch(() => null);
+    const channel = await client.channels.fetch(game.channel).catch(() => null);
     if (!channel) {
-        console.warn(`⚠️ [News] ${game.nombre}: could not fetch channel ${game.canal_id} (is the bot in that server?).`);
+        console.warn(`⚠️ [News] ${game.name}: could not fetch channel ${game.channel} (is the bot in that server?).`);
         return;
     }
 
@@ -227,18 +227,18 @@ async function checkGame(client, game, store) {
     for (const item of fresh) {
         await channel.send({ embeds: [buildEmbed(game, item, fallbackImage)], allowedMentions: { parse: [] } });
         known.seen.unshift(item.gid);
-        console.log(`📰 [News] ${game.nombre}: announced "${item.title}"`);
+        console.log(`📰 [News] ${game.name}: announced "${item.title}"`);
     }
     known.seen = known.seen.slice(0, REMEMBER);
 }
 
 async function checkNews(client) {
-    const games = loadConfig().noticias_steam || [];
+    const games = loadConfig().steam_news || [];
     const store = readStore();
     for (const game of games) {
         // One game failing (Steam hiccup, missing channel...) doesn't block the others.
-        await checkGame(client, game, store).catch(err => console.error(`❌ [News] ${game.nombre}:`, err.message));
-        await checkSale(client, game, store).catch(err => console.error(`❌ [News] ${game.nombre} (sale):`, err.message));
+        await checkGame(client, game, store).catch(err => console.error(`❌ [News] ${game.name}:`, err.message));
+        await checkSale(client, game, store).catch(err => console.error(`❌ [News] ${game.name} (sale):`, err.message));
     }
     writeStore(store);
 }

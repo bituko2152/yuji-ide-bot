@@ -24,7 +24,7 @@ const { getWindow } = require('../starters/starterCalendar');
  *     "open":  { "day": "wednesday", "time": "18:00" },   (UTC)
  *     "close": { "day": "saturday",  "time": "17:45" },   (UTC, first one after publishing)
  *     "season": 9, "format": "AB",   (optional: follows the PC leagues' calendar, starters
- *                                     "fecha_primera_carrera": round in the title, nothing on break weeks)
+ *                                     "first_race_date": round in the title, nothing on break weeks)
  *     "skip_weeks": ["2026-10-14"]   (optional: publishing dates to skip, e.g. posted by hand)
  *   }]
  *
@@ -75,8 +75,8 @@ function nextMoment(after, when) {
 // This week's round from the PC leagues' calendar ("S9A R3"); null on a break
 // week; undefined when the check doesn't follow the calendar.
 function roundOf(cfg, config, at) {
-    if (!cfg.season || !config.starters?.fecha_primera_carrera) return undefined;
-    const cal = { starters: { ...config.starters, temporada_inicial: { [cfg.name]: cfg.season }, formato: { [cfg.name]: cfg.format || 'AB' } } };
+    if (!cfg.season || !config.starters?.first_race_date) return undefined;
+    const cal = { starters: { ...config.starters, first_season: { [cfg.name]: cfg.season }, format: { [cfg.name]: cfg.format || 'AB' } } };
     const w = getWindow(cfg.name, cal, at);
     if (!w.open) return w.status === 'before' ? undefined : null;
     return w.roundName.slice(cfg.name.length).replace(/R(\d+)$/, ' R$1');

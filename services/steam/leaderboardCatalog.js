@@ -96,12 +96,12 @@ function normalize(list) {
     return Object.fromEntries(Object.entries(list || {}).map(([id, name]) => [id, name || null]));
 }
 
-// records.canales (or the older records.canal_id): channel id(s) where
+// records.channels (or the older records.channel): channel id(s) where
 // /record works, as one id or a list. Empty/"???" = anywhere.
 function recordsChannels() {
     try {
         const r = JSON.parse(fs.readFileSync(path.join(__dirname, '../../config.json'), 'utf-8')).records || {};
-        return [r.canales ?? [], r.canal_id ?? []].flat().filter(id => id && id !== '???');
+        return [r.channels ?? [], r.channel ?? []].flat().filter(id => id && id !== '???');
     } catch {
         return [];
     }
@@ -110,7 +110,7 @@ function recordsChannels() {
 function workshopIds() {
     try {
         const cfg = JSON.parse(fs.readFileSync(path.join(__dirname, '../../config.json'), 'utf-8')).records || {};
-        return { tracks: normalize(cfg.circuitos_workshop), classes: normalize(cfg.clases_workshop) };
+        return { tracks: normalize(cfg.workshop_tracks), classes: normalize(cfg.workshop_classes) };
     } catch {
         return { tracks: {}, classes: {} };
     }

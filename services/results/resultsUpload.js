@@ -8,7 +8,7 @@ const starterStore = require('../starters/starterStore');
  * /results upload: saves the CSVs made by /results listen into Supabase.
  *
  *  - race CSV (required) + qualifying CSV(s): "quali" (Q, or Q1) and "q2"
- *    (leagues with Q1/Q2 per config resultados.ligas_q2; others need the
+ *    (leagues with Q1/Q2 per config results.q2_leagues; others need the
  *    division A/B instead).
  *  - Qualifying is not a session in the DB: each race row gets grid and
  *    quali_time_ms. With Q2: Q2 drivers first by their Q2 time, then the rest

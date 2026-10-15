@@ -10,7 +10,7 @@ module.exports = {
         // Optional: leagues without teams (e.g. AL, independents only) just use /attend.
         .addStringOption(opt => opt
             .setName('team')
-            .setDescription('Team to race for (or Independent). Not needed in leagues without teams')
+            .setDescription('Team to race for (or Independent). Not needed without teams, or as a main driver')
             .setRequired(false)
             .setAutocomplete(true)),
 
@@ -55,10 +55,20 @@ module.exports = {
         }
 
         // A league with no teams is independents only: no need to pick anything.
-        const hasTeams = S.teamsOf(cat, config).length > 0;
-        const target = hasTeams ? interaction.options.getString('team') : 'independent';
+        const teams = S.teamsOf(cat, config);
+        const hasTeams = teams.length > 0;
+        let target = hasTeams ? interaction.options.getString('team') : 'independent';
+        // Leagues with main / reserve seats (config "seat_roles"): a main driver
+        // races for the team whose role they hold, no need to pick it.
+        const mainRole = config.seat_roles?.[cat]?.main;
+        if (!target && mainRole && member.roles.cache.has(mainRole)) {
+            target = teams.find(t => member.roles.cache.has(t.roleId))?.roleId || null;
+            if (!target) return interaction.editReply(`❌ You're a main driver but have no **${cat}** team role: pick your team in the \`team\` option.`);
+        }
         if (!target) {
-            return interaction.editReply('❌ Pick your team (or Independent) in the `team` option.');
+            return interaction.editReply(mainRole
+                ? '❌ Reserve drivers have to pick the team (or Independent) in the `team` option.'
+                : '❌ Pick your team (or Independent) in the `team` option.');
         }
         const isIndependent = target === 'independent';
         const team = isIndependent ? null : config.team_roles[target];

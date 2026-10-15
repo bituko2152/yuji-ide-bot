@@ -102,7 +102,7 @@ async function minimapScore(buf, pts) {
 
 function leagueWorkshopTracks() {
     try {
-        const list = JSON.parse(fs.readFileSync(path.join(__dirname, '../../config.json'), 'utf-8')).records?.circuitos_workshop || [];
+        const list = JSON.parse(fs.readFileSync(path.join(__dirname, '../../config.json'), 'utf-8')).records?.workshop_tracks || [];
         return (Array.isArray(list) ? list : Object.keys(list)).map(String);
     } catch {
         return [];
@@ -115,7 +115,7 @@ function leagueWorkshopTracks() {
 async function identifyTrack(data, pts) {
     let candidates = [...new Set([data.track, ...(data.trackCandidates || [])].filter(Boolean))];
     // No championship list from the lobby: every official track plus the
-    // league's Workshop tracks (config "records.circuitos_workshop").
+    // league's Workshop tracks (config "records.workshop_tracks").
     if (!candidates.length) candidates = [...leagueWorkshopTracks(), ...await officialTracks(), ...await originalTracks()];
     // An official name can also be an old "Road Course FA" track of the same
     // name (italy: Circus Maximus, original/italy: Monza): try both.
