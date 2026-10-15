@@ -11,6 +11,12 @@ const {
 const fs = require('fs');
 const path = require('path');
 
+// Server-specific settings (channel / role ids) are not in the repo.
+if (!fs.existsSync(path.join(__dirname, 'config.json'))) {
+    console.error('❌ config.json not found: copy config.example.json to config.json and fill in your server\'s ids.');
+    process.exit(1);
+}
+
 const express = require('express');
 const app = express();
 

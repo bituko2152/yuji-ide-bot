@@ -1,6 +1,10 @@
 node_modules/
+
+# Server-specific settings (ids): only config.example.json is public
+config.json
 .env
 .env.*
+!.env.example
 .vs/
 # Steam credentials must never be committed again
 data/steamAuth.json
