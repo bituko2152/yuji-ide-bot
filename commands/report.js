@@ -1,3 +1,4 @@
+const { reportRound } = require('../services/starters/starterCalendar');
 const { SlashCommandBuilder } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
@@ -28,9 +29,9 @@ module.exports = {
         const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
 
         const category = interaction.options.getString('category');
-        const categorySettings = config.config_categorias[category];
+        const categorySettings = config.report_leagues[category];
 
-        if (!categorySettings || categorySettings.activo === false) {
+        if (!categorySettings || categorySettings.active === false) {
             return interaction.reply({
                 content: `❌ Submissions for category **${category}** are currently closed or unconfigured.`,
                 ephemeral: true
@@ -40,9 +41,10 @@ module.exports = {
         const culprit = interaction.options.getUser('culprit');
         const evidence = interaction.options.getString('evidence');
         const description = interaction.options.getString('description');
-        const currentRound = categorySettings.round;
+        // From the league calendar, like the starters (the config value is only a fallback).
+        const currentRound = reportRound(category, config) || categorySettings.round;
 
-        const reportsChannel = interaction.guild.channels.cache.get(config.canal_reportes_id);
+        const reportsChannel = interaction.guild.channels.cache.get(config.reports_channel);
         if (!reportsChannel) {
             return interaction.reply({ content: '❌ The reports channel is not properly configured in the system.', ephemeral: true });
         }
@@ -61,9 +63,9 @@ module.exports = {
         };
 
         const sentMessage = await reportsChannel.send({
-            content: config.rol_stewards_id ? `<@&${config.rol_stewards_id}>` : undefined,
+            content: config.stewards_role ? `<@&${config.stewards_role}>` : undefined,
             ...render({ reportId, report, voters: {}, createdAt: Date.now() }),
-            allowedMentions: config.rol_stewards_id ? { roles: [config.rol_stewards_id] } : { parse: [] }
+            allowedMentions: config.stewards_role ? { roles: [config.stewards_role] } : { parse: [] }
         });
 
         const thread = await sentMessage.startThread({

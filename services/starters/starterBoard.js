@@ -130,7 +130,7 @@ function drawBlock(ctx, x, y, block) {
 /**
  * @param {object} p
  * @param {string} p.roundName          e.g. 'ULS26R1'
- * @param {Array}  p.teams              [{ roleId, nombre, color }] (config order)
+ * @param {Array}  p.teams              [{ roleId, name, color }] (config order)
  * @param {number} p.independentSlots   6 (UL/CL/JL) or 18 (AL)
  * @param {object} p.round              the stored round ({ teams, independents })
  * @returns {Buffer} PNG

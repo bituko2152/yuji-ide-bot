@@ -40,7 +40,7 @@ module.exports = {
         const trackKey = interaction.options.getString('track');
         const classKey = interaction.options.getString('class');
 
-        // Only usable in the channels set in config.json records.canales (if any).
+        // Only usable in the channels set in config.json records.channels (if any).
         const allowed = catalog.recordsChannels();
         if (allowed.length && !allowed.includes(interaction.channelId)) {
             const list = allowed.map(id => `<#${id}>`).join(', ');

@@ -1,3 +1,4 @@
+const { reportRound } = require('../starters/starterCalendar');
 const fs = require('fs');
 const path = require('path');
 const {
@@ -13,7 +14,7 @@ const pollStore = require('./pollStore');
  *
  * Submit result (stewards): private message with the same two dropdowns,
  * prefilled with the most voted level/type, the standard amount (editable),
- * Confirm / Cancel. Confirm posts to config "canal_resultados_reports_id":
+ * Confirm / Cancel. Confirm posts to config "report_results_channel":
  *
  *   Report: <@culprit> | JL | S22A R1
  *   Result: <offense> | <kind of penalty>
@@ -50,7 +51,7 @@ function loadConfig() {
 }
 
 function isSteward(member, config) {
-    return !!config.rol_stewards_id && member.roles.cache.has(config.rol_stewards_id);
+    return !!config.stewards_role && member.roles.cache.has(config.stewards_role);
 }
 
 // "JLS22AR1" / "CL23R1" -> "JL S22A R1"
@@ -252,7 +253,7 @@ async function findResultMessage(channel, poll) {
 function submitView(messageId, poll, draft) {
     const d = decision(draft.level, draft.type, draft.amount);
     const r = poll.report;
-    const channelId = loadConfig().canal_resultados_reports_id;
+    const channelId = loadConfig().report_results_channel;
     const content =
         `**${poll.submitted ? 'Rectify' : 'Submit'} result · Report #${poll.reportId}** → posted in <#${channelId}>` +
         (poll.submitted ? ' as a reply to the previous result\n' : '\n') +
@@ -336,12 +337,12 @@ async function handleConfirmButton(interaction) {
     const poll = pollStore.getPoll(messageId);
     if (!poll?.draft) return interaction.update({ content: '⚠️ Already submitted or expired.', components: [] });
 
-    const reportsChannel = await interaction.client.channels.fetch(config.canal_reportes_id).catch(() => null);
+    const reportsChannel = await interaction.client.channels.fetch(config.reports_channel).catch(() => null);
     const message = await reportsChannel?.messages.fetch(messageId).catch(() => null);
-    const target = config.canal_resultados_reports_id
-        ? await interaction.client.channels.fetch(config.canal_resultados_reports_id).catch(() => null) : null;
+    const target = config.report_results_channel
+        ? await interaction.client.channels.fetch(config.report_results_channel).catch(() => null) : null;
     if (!message || !target) {
-        return interaction.update({ content: '❌ Report message or results channel (config "canal_resultados_reports_id") not found.', components: [] });
+        return interaction.update({ content: '❌ Report message or results channel (config "report_results_channel") not found.', components: [] });
     }
 
     const r = poll.report;
@@ -395,8 +396,8 @@ function parseOldReport(message) {
  */
 async function migrateOldPolls(client) {
     const config = loadConfig();
-    const currentRounds = new Set(Object.values(config.config_categorias || {}).map(c => c.round));
-    const channel = await client.channels.fetch(config.canal_reportes_id).catch(() => null);
+    const currentRounds = new Set(Object.entries(config.report_leagues || {}).map(([cat, c]) => reportRound(cat, config) || c.round));
+    const channel = await client.channels.fetch(config.reports_channel).catch(() => null);
     if (!channel) return;
 
     for (const [messageId, poll] of Object.entries(pollStore.readAll())) {
@@ -474,7 +475,7 @@ function parseReportMessage(message) {
  */
 async function recoverLostPolls(client) {
     const config = loadConfig();
-    const channel = await client.channels.fetch(config.canal_reportes_id).catch(() => null);
+    const channel = await client.channels.fetch(config.reports_channel).catch(() => null);
     if (!channel) return;
     const known = pollStore.readAll();
     // Same window as the daily cleanup (which drops polls older than 15 days

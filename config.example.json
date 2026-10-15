@@ -1,6 +1,6 @@
 {
   "extra_servers": [
-    { "id": "000000000000000000", "commands": [ "offercontract", "attend", "removeattendance" ] }
+    { "id": "000000000000000000", "commands": [ "offercontract", "attend", "removeattendance", "message", "Edit message" ] }
   ],
   "lobby_channels": [ "000000000000000000", "000000000000000000" ],
   "steam_news": [
@@ -12,6 +12,11 @@
   "report_results_channel": "000000000000000000",
   "report_announcements_channel": "000000000000000000",
   "stewards_role": "000000000000000000",
+
+  "messages": {
+    "main":               { "roles": [ "000000000000000000", "000000000000000000" ], "log_channel": "000000000000000000" },
+    "<mobile server id>": { "roles": [ "000000000000000000", "000000000000000000", "000000000000000000" ], "log_channel": "000000000000000000" }
+  },
 
   "results": {
     "channel": "000000000000000000",
@@ -51,7 +56,7 @@
 
   "starters": {
     "first_race_date": "2026-10-04",
-    "manager_role": "000000000000000000",
+    "manager_role": [ "000000000000000000", "000000000000000000" ],
     "manager_users": [ "000000000000000000" ],
     "channels":          { "UL": "000000000000000000", "CL": "000000000000000000", "JL": "000000000000000000", "AL": "000000000000000000", "UMRL": "000000000000000000", "AMRL": "000000000000000000", "EMRL": "000000000000000000" },
     "opens":             { "day": "wednesday", "time": "18:00", "leagues": [ "UMRL", "AMRL", "EMRL" ] },

@@ -10,7 +10,7 @@ const { renderReplay } = require('../replay/render');
 /*
  * League results: /results listen follows an online lobby and posts each
  * qualifying / race table as a CSV (human drivers only) to config
- * "resultados.canal_id", each followed by its replay, until the lobby closes
+ * "results.channel", each followed by its replay, until the lobby closes
  * or /results stop.
  *
  * Listening is "hidden": the bot connects to the lobby on the master server
@@ -222,8 +222,8 @@ function isWatching(key) {
 }
 
 function listen(client, lobby) {
-    const channelId = loadConfig().resultados?.canal_id;
-    if (!channelId) throw new Error('Results channel not set (config "resultados.canal_id").');
+    const channelId = loadConfig().results?.channel;
+    if (!channelId) throw new Error('Results channel not set (config "results.channel").');
     if (!watching.has(lobbyKey(lobby))) watch(client, lobby, channelId);
 }
 

@@ -2,10 +2,10 @@ const fs = require('fs');
 const path = require('path');
 const { AttachmentBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
 const starterStore = require('./starterStore');
-const { getWindow, mondayUtc, WEEK_MS } = require('./starterCalendar');
+const { getWindow, weekStartAt, WEEK_MS } = require('./starterCalendar');
 const { renderBoard } = require('./starterBoard');
 
-const TICK_MS = 60 * 1000;     // 1 min is plenty to catch Monday 00:00 UTC
+const TICK_MS = 60 * 1000;     // 1 min is plenty to catch the start of the week
 const TEAM_SLOTS = 2;
 const BOARD_DEBOUNCE_MS = 1500;
 
@@ -16,8 +16,8 @@ function loadConfig() {
 // ---------------------------------------------------------------- helpers
 
 function categoryFromChannel(channelId, config) {
-    const canales = config.starters?.canales || {};
-    return Object.entries(canales).find(([, id]) => id === channelId)?.[0] || null;
+    const channels = config.starters?.channels || {};
+    return Object.entries(channels).find(([, id]) => id === channelId)?.[0] || null;
 }
 
 function teamsOf(cat, config) {
@@ -27,7 +27,7 @@ function teamsOf(cat, config) {
 }
 
 function independentSlots(cat, config) {
-    return config.starters?.slots_independent?.[cat] ?? 6;
+    return config.starters?.independent_slots?.[cat] ?? 6;
 }
 
 function isOpen(round) {
@@ -41,12 +41,12 @@ function isTO(member, teamRoleId, cat, config) {
     return member.roles.cache.has(managerRoleId) && member.roles.cache.has(teamRoleId);
 }
 
-// Managers (rol_gestor / usuarios_gestores) can remove anyone: any team or Independent.
+// Managers (manager_role / manager_users) can remove anyone: any team or Independent.
+// manager_role is one role id or a list (e.g. one per server).
 function canManage(member, config) {
     const s = config.starters || {};
-    if ((s.usuarios_gestores || []).includes(member.id)) return true;
-    const roleId = s.rol_gestor;
-    return !!roleId && roleId !== '???' && member.roles.cache.has(roleId);
+    if ((s.manager_users || []).includes(member.id)) return true;
+    return [].concat(s.manager_role || []).some(id => id !== '???' && member.roles.cache.has(id));
 }
 
 function targetLabel(target, config) {
@@ -132,7 +132,7 @@ function leagueRoleMention(cat, config) {
 function buildContent(round, closed, mention = '') {
     if (closed) return `🔒 **Starters ${round.roundName}** — closed.`;
     const ts = Math.floor(round.closesAt / 1000);
-    return `${mention ? mention + '\n' : ''}📋 **Starters ${round.roundName}**\nCloses <t:${ts}:F> (<t:${ts}:R>). Use \`/attend\` in this channel to check in.`;
+    return `${mention ? mention + '\n' : ''}📋 **Starters ${round.roundName}**\nCloses <t:${ts}:F> (<t:${ts}:R>). Use \`/attend\` in this channel to check in, \`/removeattendance\` to remove yourself.`;
 }
 
 function buildBoardFile(cat, round, config) {
@@ -272,7 +272,7 @@ async function handleStarterButton(interaction) {
 // ---------------------------------------------------------------- open / close rounds
 
 async function openRound(client, cat, win, config) {
-    const channelId = config.starters.canales[cat];
+    const channelId = config.starters.channels[cat];
     const channel = await client.channels.fetch(channelId);
 
     const round = {
@@ -325,39 +325,40 @@ const CONFIG_PATH = path.join(__dirname, '../../config.json');
 
 /**
  * Every Monday 00:00 UTC that follows a race week, the race that was just
- * run becomes the current round for /report (config_categorias.round),
+ * run becomes the current round for /report (report_leagues.round),
  * reports are switched on, and ONE generic announcement is posted for all
  * leagues. Idempotent: it only fires once per week (tracked in _meta).
  */
-// config_categorias.<cat> = { activo: true, round } written into the config.json
+// report_leagues.<cat> = { active: true, round } written into the config.json
 // text in place; the whole file is only rewritten if that entry can't be found.
 function setRoundInText(text, cat, roundName) {
-    const start = text.indexOf('"config_categorias"');
+    const start = text.indexOf('"report_leagues"');
     const end = start < 0 ? -1 : text.indexOf('\n  }', start);
     const entry = new RegExp(`("${cat}"\\s*:\\s*\\{)([^}]*)(\\})`);
     if (start >= 0 && end > start && entry.test(text.slice(start, end))) {
         const block = text.slice(start, end).replace(entry, (m, open, body, close) => {
-            body = body.replace(/("round"\s*:\s*")[^"]*(")/, `$1${roundName}$2`).replace(/("activo"\s*:\s*)(true|false)/, '$1true');
+            body = body.replace(/("round"\s*:\s*")[^"]*(")/, `$1${roundName}$2`).replace(/("active"\s*:\s*)(true|false)/, '$1true');
             return open + body + close;
         });
         const out = text.slice(0, start) + block + text.slice(end);
-        const parsed = JSON.parse(out).config_categorias?.[cat];
-        if (parsed?.round === roundName && parsed.activo === true) return out;
+        const parsed = JSON.parse(out).report_leagues?.[cat];
+        if (parsed?.round === roundName && parsed.active === true) return out;
     }
     const fresh = JSON.parse(text);
-    fresh.config_categorias[cat] = { ...(fresh.config_categorias[cat] || {}), activo: true, round: roundName };
+    fresh.report_leagues[cat] = { ...(fresh.report_leagues[cat] || {}), active: true, round: roundName };
     return JSON.stringify(fresh, null, 2);
 }
 
 async function syncReports(client, config) {
     const now = Date.now();
-    const weekStart = mondayUtc(new Date(now));
+    const weekStart = weekStartAt(now);
     const meta = starterStore.getMeta();
     if (meta.reportsWeekStart === weekStart) return;
 
     // Round of the race window that ended at this week's Monday 00:00.
     const justRaced = {};
-    for (const cat of Object.keys(config.starters.formato)) {
+    // Only the leagues with /report (report_leagues); the mobile ones have none.
+    for (const cat of Object.keys(config.starters.format).filter(c => config.report_leagues?.[c])) {
         const prev = getWindow(cat, config, now - WEEK_MS);
         if (prev.open) justRaced[cat] = prev.roundName;
     }
@@ -369,9 +370,9 @@ async function syncReports(client, config) {
         for (const [cat, roundName] of Object.entries(justRaced)) text = setRoundInText(text, cat, roundName);
         fs.writeFileSync(CONFIG_PATH, text);
 
-        const channelId = config.canal_anuncios_reports_id;
+        const channelId = config.report_announcements_channel;
         if (!channelId || channelId === '???') {
-            console.warn('⚠️ [Reports] canal_anuncios_reports_id not configured: rounds updated, no announcement sent.');
+            console.warn('⚠️ [Reports] report_announcements_channel not configured: rounds updated, no announcement sent.');
         } else {
             const channel = await client.channels.fetch(channelId).catch(() => null);
             if (channel) {
@@ -410,8 +411,8 @@ async function tick(client) {
         const config = loadConfig();
         if (!config.starters) return;
 
-        for (const cat of Object.keys(config.starters.canales)) {
-            const channelId = config.starters.canales[cat];
+        for (const cat of Object.keys(config.starters.channels)) {
+            const channelId = config.starters.channels[cat];
             if (!channelId || channelId === '???') {
                 if (!warned.has(cat)) {
                     console.warn(`⚠️ [Starters] No starters channel configured for ${cat}, skipping it.`);
@@ -437,8 +438,8 @@ async function tick(client) {
                     await closeRound(client, cat);
                 }
 
-                // Race week without a round yet -> open it. (Break week: nothing.)
-                if (win.open) {
+                // Race week without a round yet, once its opening time comes -> open it. (Break week: nothing.)
+                if (win.open && Date.now() >= win.opensAt && Date.now() < win.closesAt) {
                     const stored = starterStore.getRound(cat);
                     if (!stored || stored.weekStart !== win.weekStart) {
                         await openRound(client, cat, win, config);
