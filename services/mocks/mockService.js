@@ -51,7 +51,7 @@ function embed(cfg, day, startAt, status, color = '#3498db') {
     const t = Math.floor(startAt / 1000);
     return new EmbedBuilder()
         .setColor(color)
-        .setTitle(`🏎️ Mock today · ${day.format}`)
+        .setTitle(`Mock today · ${day.format}`)
         .setDescription(
             `Lobby **${cfg.lobby_name || 'Yuji Mocks'}** (PC only), hosted by Yuji. Track: **${day.trackName}**.\n` +
             `Starts at <t:${t}:t> (<t:${t}:R>): **${day.races}** × qualifying + race of **${day.laps}** laps` +
@@ -65,7 +65,7 @@ async function runMock(client, cfg, day, startAt) {
 
     // This week's league round: track, and laps unless the day sets them (sprints).
     const round = await roundThisWeek(client, cfg.schedule_channels?.[day.league]);
-    if (!round) return console.log(`🏎️ [Mocks] No ${day.league} round this week (break?): no mock today.`);
+    if (!round) return console.log(`[Mocks] No ${day.league} round this week (break?): no mock today.`);
     // Races take the week's rain chance unless the day is dry ("rain": false: AL, sprints).
     day = { ...day, laps: day.laps || round.laps, track: round.track, trackName: round.name || round.track,
         rain: day.rain === false || cfg.rain === false ? 0 : round.rain };
@@ -79,7 +79,7 @@ async function runMock(client, cfg, day, startAt) {
         host.close();
         return;
     }
-    console.log(`🏎️ [Mocks] Lobby open (${day.format}, ${day.races}×${day.laps} laps).`);
+    console.log(`[Mocks] Lobby open (${day.format}, ${day.races}×${day.laps} laps).`);
     const message = await channel.send({
         content: cfg.role ? `<@&${cfg.role}>` : undefined,
         embeds: [embed(cfg, day, startAt, '🟢 The lobby is open: join from the game.')],
@@ -124,7 +124,7 @@ async function runMock(client, cfg, day, startAt) {
     } finally {
         host.close();
         active = null;
-        console.log('🏎️ [Mocks] Lobby closed.');
+        console.log('[Mocks] Lobby closed.');
     }
 }
 
