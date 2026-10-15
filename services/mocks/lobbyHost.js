@@ -1,4 +1,5 @@
 const dgram = require('dgram');
+const { createWeather } = require('./weather');
 
 /*
  * Yuji hosts a UR2D2 lobby as a spectator (no car): creates it on the game's
@@ -216,10 +217,12 @@ function createLobbyHost({ name, password = '', carClass = 'formulaa', className
 
         sendGrid(n);
         await sleep(500);
-        // Weather: the rain chance goes in the settings ("rain X%"); dry sessions
-        // (qualifying, 0 %) are set clear.
+        // Weather: races with a rain chance run the game's own weather (weather.js),
+        // started at the green light; dry sessions (qualifying, 0 %) are set clear.
         const dry = n !== 3 || !settings.rain;
+        session.weather = dry ? null : createWeather(settings.rain, (...f) => toAll(...f));
         if (dry) { toAll('*36', 0, 0, 0, -1); toAll('*39', 'spr_weather_clear'); }
+        else session.weather.startMessages();
         msg('94', ['*15', '0', hostId]); // loaded as a spectator ("1" would add a car)
         toAll('*7', hostId, 0, 1);
         reliable(['102', lobby, '0', '1', SESSION_NAMES[n]]);
@@ -231,8 +234,10 @@ function createLobbyHost({ name, password = '', carClass = 'formulaa', className
         msg('92', ['*16', '1']);
         toAll('*7', hostId, 0, 1);
         if (dry) toAll('*39', 'spr_weather_clear');
+        else session.weather.forecastAgain();
         await sleep(4100);
         toAll('*38', 1);
+        session.weather?.start();
         // Safety net if nobody finishes (qualifying normally ends 15 s after the first finisher).
         session.timer = setTimeout(() => endSession('timeout'), (n === 2 ? 10 : 15 + settings.laps * 2) * 60000);
         return session.done;
@@ -250,6 +255,7 @@ function createLobbyHost({ name, password = '', carClass = 'formulaa', className
         s.ended = true;
         clearTimeout(s.timer);
         clearTimeout(s.finishTimer);
+        s.weather?.stop();
         msg('92', ['*18', '1']);
         await sleep(1000); // finishing times still on their way
         const results = sendResults(s);
@@ -419,6 +425,7 @@ function createLobbyHost({ name, password = '', carClass = 'formulaa', className
         say: text => toAll('*6', hostId, HOST_NAME, text),
         close() {
             if (closed) return;
+            session?.weather?.stop();
             if (lobby) raw(['95', lobby, hostId, '1', String(++seq)]);
             closed = true;
             for (const t of timers) { clearTimeout(t); clearInterval(t); }
