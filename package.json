@@ -1,4 +1,16 @@
 {
+  "name": "yuji-ide-bot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Discord bot that runs a sim-racing league community: race reports, starters, results capture, HTML race replays and bot-hosted practice lobbies for Ultimate Racing 2D 2.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "steam-login": "node scripts/steamLogin.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
     "@doctormckay/steam-crypto": "^1.2.0",
     "@napi-rs/canvas": "^1.0.9",
@@ -8,7 +20,9 @@
     "express": "^4.19.2",
     "lzma": "^2.3.2",
     "seek-bzip": "^2.0.0",
-    "steam-user": "^5.2.0"
+    "steam-session": "^1.9.4",
+    "steam-user": "^5.2.0",
+    "zstddec": "^0.1.0"
   },
   "devDependencies": {
     "eslint": "^10.11.0"
