@@ -184,21 +184,24 @@ function createLobbyHost({ name, password = '', carClass = 'formulaa', className
     // ------------------------------------------------------------ sessions
 
     // Grid like the game: drivers, then the host (not racing), then the AI rows (not racing).
-    function sendGrid(n) {
-        toAll('*33', 1, 0, ...settingsFields(n));
-        toAll('*33', 2, settings.track, '');
+    // `to`: a player id = only to that player (someone pressing Ready mid-session:
+    // the game's send_race_start_to_other with "1" first, then they spectate).
+    function sendGrid(n, to = null) {
+        const send = (...p) => (to ? toOne(to, ...p) : toAll(...p));
+        send('*33', 1, to ? 1 : 0, ...settingsFields(n));
+        send('*33', 2, settings.track, '');
         const h = players[0];
         for (let i = 0; i < 20; i++) {
             const p = session.grid[i];
-            if (p) toAll('*33', 3, i, p.name, p.team, 1, 1, p.id, p.num, p.sortKey, i + 1, p.ping, TAG, '');
-            else if (i === session.grid.length) toAll('*33', 3, i, h.name, h.team, 1, 0, h.id, h.num, (10000000 + (i + 1) / 1e5).toFixed(5), i + 1, h.ping, TAG, '');
+            if (p) send('*33', 3, i, p.name, p.team, 1, 1, p.id, p.num, p.sortKey, i + 1, p.ping, TAG, '');
+            else if (i === session.grid.length) send('*33', 3, i, h.name, h.team, 1, 0, h.id, h.num, (10000000 + (i + 1) / 1e5).toFixed(5), i + 1, h.ping, TAG, '');
             else {
                 const k = i - session.grid.length - 1;
                 const ai = AI[k] || AI[0];
-                toAll('*33', 3, i, ai.name, ai.team, ai.seat, 0, k + 1, ai.num, (100000000 + (i + 1) / 1e5).toFixed(5), i + 1, 50, TAG, '');
+                send('*33', 3, i, ai.name, ai.team, ai.seat, 0, k + 1, ai.num, (100000000 + (i + 1) / 1e5).toFixed(5), i + 1, 50, TAG, '');
             }
         }
-        msg('94', ['*3', '1']);
+        if (!to) msg('94', ['*3', '1']);
     }
 
     /** Runs qualifying (n=2) or a race (n=3); resolves with the results when it's over (null if nobody raced). */
@@ -245,11 +248,20 @@ function createLobbyHost({ name, password = '', carClass = 'formulaa', className
 
     function firstFinisher() {
         if (!session || session.finishTimer) return;
-        const wait = session.n === 3 ? 60000 : 15000;
+        // As in the league: the race ends 60 s after the leader, qualifying 8 s after the first finisher.
+        const wait = session.n === 3 ? 60000 : 8000;
+        // The finisher's game sends *18|1 ("someone finished": everybody's countdown starts)
+        // to the host; the host passes it on to everybody, once per session.
+        if (!session.countdownSent) { session.countdownSent = true; msg('92', ['*18', '1']); }
         session.finishTimer = setTimeout(() => endSession('time after first finisher'), wait);
     }
 
-    async function endSession(why) {
+    // Never throws: it runs from timers and message handlers, where an error would end the process.
+    function endSession(why) {
+        return finishSession(why).catch(err => log(`⚠️ [Mocks] Ending the session failed: ${err.message}`));
+    }
+
+    async function finishSession(why) {
         if (!session || session.ended) return;
         const s = session;
         s.ended = true;
@@ -316,7 +328,9 @@ function createLobbyHost({ name, password = '', carClass = 'formulaa', className
                 players.push({ id, name: pname, team: Number(team), num: Number(team), ping: Number(ping), racing: 0,
                     points: 0.1 - players.length * 0.001, flag: 'class:1/track:1' });
                 log(`➕ [Mocks] ${pname} joined`);
-                sendSettings();
+                // As the game's host: the session settings (*33) only go to everybody when a
+                // session starts. Sent on a join or leave mid-race, every game takes them as a
+                // new session ("race finished", crashes); the newcomer gets theirs in *30.
                 sendWelcome(id);
                 sendRoster();
                 toAll('*28', 1, pname);
@@ -329,18 +343,30 @@ function createLobbyHost({ name, password = '', carClass = 'formulaa', className
                 log(`➖ [Mocks] ${p.name} left`);
                 // Everybody of the session's grid gone: end it now (else it waits for the safety timeout).
                 if (session && !session.grid.some(g => byId(g.id))) endSession('everybody left');
-                sendSettings();
                 sendRoster();
                 toAll('*28', 2, p.name);
                 break;
             }
             case '2': { const p = byId(f[1]); if (p) { p.num = Number(f[2]); sendRoster(); } break; }
             case '5': { const p = byId(f[2]); if (p) { p.racing = Number(f[3]); sendRoster(); } break; }
+            case '3': { // *3|2|id: pressed Ready; mid-session they get the session and spectate it
+                if (f[1] !== '2' || !session) break;
+                const p = byId(f[2]);
+                if (p && p.id !== hostId && !session.grid.some(g => g.id === p.id)) {
+                    log(`👀 [Mocks] ${p.name} joins the running ${SESSION_NAMES[session.n]} as a spectator`);
+                    sendGrid(session.n, p.id);
+                }
+                break;
+            }
+            case '18': { // *18|1 from the first finisher's game: start everybody's countdown
+                if (session && f[1] === '1') firstFinisher();
+                break;
+            }
             case '29': { const p = byId(f[1]); if (p) p.ping = Number(f[2]); break; }
             // Content check: *47|1|id|class:0/track:1 (0 = that driver doesn't have the
             // Workshop car / track). Shown in the lobby list like the game does.
             case '47': { const p = byId(f[2]); if (p && f[3]) { p.flag = f[3]; sendRoster(); log(`📦 [Mocks] ${p.name}: ${f[3]}`); } break; }
-            case '42': { const p = byId(f[1]); if (p && p.id !== hostId) { p.spectator = f[2] === '1'; if (!session) sendSettings(); sendRoster(); } break; }
+            case '42': { const p = byId(f[1]); if (p && p.id !== hostId) { p.spectator = f[2] === '1'; sendRoster(); } break; }
             case '15': if (session) session.loaded.add(f[2]); break;
             case '11': { // lap: *11|car|lap|total
                 if (!session) break;
@@ -397,7 +423,12 @@ function createLobbyHost({ name, password = '', carClass = 'formulaa', className
             readyResolve(lobby);
             return;
         }
-        onMessage(f);
+        // A bad or unexpected message (e.g. someone leaving at an odd moment) must never take the lobby down.
+        try {
+            onMessage(f);
+        } catch (err) {
+            log(`⚠️ [Mocks] Message *${f[0]} failed: ${err.message}`);
+        }
     });
     socket.on('error', err => log(`❌ [Mocks] Socket: ${err.message}`));
 
@@ -423,6 +454,8 @@ function createLobbyHost({ name, password = '', carClass = 'formulaa', className
         /** rain: the chance in % (0 = dry). */
         race: (raceLaps, rain = 0) => { settings.laps = raceLaps; settings.rain = rain; sendSettings(); return runSession(3); },
         say: text => toAll('*6', hostId, HOST_NAME, text),
+        /** Ends the session now (results with what was done so far), back to the lobby. */
+        endSession: () => endSession('ended by hand'),
         close() {
             if (closed) return;
             session?.weather?.stop();

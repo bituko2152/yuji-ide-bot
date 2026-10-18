@@ -16,6 +16,12 @@ if (!fs.existsSync(path.join(__dirname, 'config.json'))) {
     console.error('❌ config.json not found: copy config.example.json to config.json and fill in your server\'s ids.');
     process.exit(1);
 }
+try {
+    JSON.parse(fs.readFileSync(path.join(__dirname, 'config.json'), 'utf-8'));
+} catch (err) {
+    console.error(`❌ config.json is not valid JSON (${err.message}): fix it, or restore it from .config.backup.json.`);
+    process.exit(1);
+}
 
 const express = require('express');
 const app = express();
@@ -332,6 +338,11 @@ for (const signal of ['SIGTERM', 'SIGINT']) {
         setTimeout(() => process.exit(0), 700);
     });
 }
+
+// An error nobody caught (a timer, a lobby message, a Discord event) is logged
+// instead of taking the whole bot down with it.
+process.on('unhandledRejection', err => console.error('❌ Unhandled rejection:', err));
+client.on('error', err => console.error('❌ Discord client error:', err));
 
 // Login using the existing environment variable
 client.login(process.env.DISCORD_TOKEN);
