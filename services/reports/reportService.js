@@ -1,3 +1,4 @@
+const { reportRound } = require('../starters/starterCalendar');
 const fs = require('fs');
 const path = require('path');
 const {
@@ -395,7 +396,7 @@ function parseOldReport(message) {
  */
 async function migrateOldPolls(client) {
     const config = loadConfig();
-    const currentRounds = new Set(Object.values(config.report_leagues || {}).map(c => c.round));
+    const currentRounds = new Set(Object.entries(config.report_leagues || {}).map(([cat, c]) => reportRound(cat, config) || c.round));
     const channel = await client.channels.fetch(config.reports_channel).catch(() => null);
     if (!channel) return;
 

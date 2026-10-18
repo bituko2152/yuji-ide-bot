@@ -87,4 +87,18 @@ function getWindow(cat, config, now = Date.now()) {
     return { ...base, open: true, roundName };
 }
 
-module.exports = { getWindow, mondayUtc, WEEK_MS };
+/**
+ * The round /report files incidents under, from the calendar: the last race
+ * run before this week (last week's, or the one before a break week). Null
+ * when there's none yet.
+ */
+function reportRound(cat, config, now = Date.now()) {
+    for (let w = 1; w <= 3; w++) {
+        const win = getWindow(cat, config, now - w * WEEK_MS);
+        if (win.status === 'before') return null;
+        if (win.open) return win.roundName;
+    }
+    return null;
+}
+
+module.exports = { getWindow, reportRound, mondayUtc, WEEK_MS };

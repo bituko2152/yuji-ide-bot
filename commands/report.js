@@ -1,3 +1,4 @@
+const { reportRound } = require('../services/starters/starterCalendar');
 const { SlashCommandBuilder } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
@@ -40,7 +41,8 @@ module.exports = {
         const culprit = interaction.options.getUser('culprit');
         const evidence = interaction.options.getString('evidence');
         const description = interaction.options.getString('description');
-        const currentRound = categorySettings.round;
+        // From the league calendar, like the starters (the config value is only a fallback).
+        const currentRound = reportRound(category, config) || categorySettings.round;
 
         const reportsChannel = interaction.guild.channels.cache.get(config.reports_channel);
         if (!reportsChannel) {
