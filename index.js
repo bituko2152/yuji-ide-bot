@@ -88,6 +88,11 @@ const {
     isUploadComponent
 } = require('./services/results/resultsUpload');
 
+const {
+    handleModal: handleMessageModal,
+    isMessageComponent
+} = require('./services/messages/messageService');
+
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -291,9 +296,20 @@ client.on('interactionCreate', async interaction => {
     }
 
     /*
-     * Handle slash commands
+     * Handle the /message form (new message / edit)
      */
-    if (!interaction.isChatInputCommand()) {
+    if (interaction.isModalSubmit() && isMessageComponent(interaction.customId)) {
+        await handleMessageModal(interaction).catch(error => {
+            console.error('❌ Error handling message form:', error);
+        });
+
+        return;
+    }
+
+    /*
+     * Handle slash commands and message context menus (e.g. "Edit message")
+     */
+    if (!interaction.isChatInputCommand() && !interaction.isMessageContextMenuCommand()) {
         return;
     }
 
