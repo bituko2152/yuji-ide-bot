@@ -72,6 +72,10 @@ const {
 } = require('./services/racecheck/raceCheckService');
 
 const {
+    startDotdLoop
+} = require('./services/dotd/dotdService');
+
+const {
     startResultsLoop,
     stopAll: stopListeningAll
 } = require('./services/results/resultsWatcher');
@@ -207,6 +211,9 @@ client.once('clientReady', async () => {
 
     // Stops /results listeners once their lobby closes.
     startResultsLoop(client);
+
+    // Closes Driver of the Day polls after 48 h and posts the winner.
+    startDotdLoop(client);
 
     // Reports of the current rounds still on the old poll -> S26 penalty system.
     migrateOldPolls(client).catch(err => console.error('❌ [Reports] Poll migration failed:', err.message));

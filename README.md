@@ -26,6 +26,7 @@ which lets the bot read live races and host game lobbies itself, without running
 | **Data** | `/results upload`: imports results into a Supabase (PostgreSQL) database, with a preview and manual matching for unknown drivers |
 | | `/record`: top lap times from the game's Steam leaderboards |
 | **Community** | Steam news posts and store sales announced automatically, plus a player count in the bot's status |
+| | `/dotd`: Driver of the Day poll from a race CSV, one button per driver, hidden votes and the winner announced after 48 h |
 | | `/message`: staff post messages as the bot; anyone with the same roles can edit them later (right click → Apps), with every edit logged |
 
 ---
