@@ -381,7 +381,9 @@ function createLobbyHost({ name, password = '', carClass = 'formulaa', className
                 break;
             }
             case '19': { // finished: *19|car|total|gap|best
-                if (!session) break;
+                // "finished 0" isn't a finish: a car still racing (or spectating) sends it when
+                // the first one finishes. Counted, it ended the session for everybody right then.
+                if (!session || !(Number(f[2]) > 0)) break;
                 const car = session.cars.get(Number(f[1])) || { laps: 0 };
                 Object.assign(car, { finished: true, total: Number(f[2]), best: Number(f[4]) || car.best });
                 session.cars.set(Number(f[1]), car);

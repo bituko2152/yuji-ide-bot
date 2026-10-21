@@ -33,8 +33,8 @@ const storeFile = path.join(__dirname, '../../data/mocks.json');
 const configPath = path.join(__dirname, '../../config.json');
 const DAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 const WAIT_FOR_DRIVERS_MS = 10 * 60 * 1000; // nobody in the lobby at the start: wait this long
-const AFTER_QUALI_MS = 30 * 1000;           // qualifying -> first race
-const BETWEEN_RACES_MS = 3 * 60 * 1000;     // break in the lobby between races
+const AFTER_QUALI_MS = 15 * 1000;           // qualifying -> race
+const BETWEEN_RACES_MS = 60 * 1000;         // race -> next qualifying
 const CLOSE_AFTER_MS = 2 * 60 * 1000;
 
 const loadConfig = () => JSON.parse(fs.readFileSync(configPath, 'utf-8')).mocks;
@@ -99,10 +99,10 @@ async function runMock(client, cfg, day, startAt) {
             return;
         }
 
-        // Every race has its own qualifying: quali, 30 s, race; 3 minutes before the next one.
+        // Every race has its own qualifying: quali, 15 s, race; 1 minute before the next one.
         for (let i = 1; i <= day.races; i++) {
             if (i > 1) {
-                host.say(`Next: qualifying for race ${i} of ${day.races} in 3 minutes.`);
+                host.say(`Next: qualifying for race ${i} of ${day.races} in 1 minute.`);
                 await sleep(BETWEEN_RACES_MS);
             }
             if (!host.racers().length) break;
@@ -110,7 +110,7 @@ async function runMock(client, cfg, day, startAt) {
             host.say(`Qualifying for race ${i} of ${day.races} starts now. Good luck!`);
             await host.qualifying();
 
-            host.say(`Race ${i} of ${day.races} (${day.laps} laps) starts in 30 seconds.`);
+            host.say(`Race ${i} of ${day.races} (${day.laps} laps) starts in 15 seconds.`);
             await sleep(AFTER_QUALI_MS);
             if (!host.racers().length) break;
             await status(`🏁 Race ${i} of ${day.races} in progress.`);

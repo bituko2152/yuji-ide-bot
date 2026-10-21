@@ -42,11 +42,11 @@ function isTO(member, teamRoleId, cat, config) {
 }
 
 // Managers (manager_role / manager_users) can remove anyone: any team or Independent.
+// manager_role is one role id or a list (e.g. one per server).
 function canManage(member, config) {
     const s = config.starters || {};
     if ((s.manager_users || []).includes(member.id)) return true;
-    const roleId = s.manager_role;
-    return !!roleId && roleId !== '???' && member.roles.cache.has(roleId);
+    return [].concat(s.manager_role || []).some(id => id !== '???' && member.roles.cache.has(id));
 }
 
 function targetLabel(target, config) {
