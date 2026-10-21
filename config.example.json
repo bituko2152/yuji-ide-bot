@@ -1,6 +1,6 @@
 {
   "extra_servers": [
-    { "id": "000000000000000000", "commands": [ "offercontract", "attend", "removeattendance" ] }
+    { "id": "000000000000000000", "commands": [ "offercontract", "attend", "removeattendance", "message", "Edit message" ] }
   ],
   "lobby_channels": [ "000000000000000000", "000000000000000000" ],
   "steam_news": [
@@ -12,6 +12,11 @@
   "report_results_channel": "000000000000000000",
   "report_announcements_channel": "000000000000000000",
   "stewards_role": "000000000000000000",
+
+  "messages": {
+    "main":               { "roles": [ "000000000000000000", "000000000000000000" ], "log_channel": "000000000000000000" },
+    "<mobile server id>": { "roles": [ "000000000000000000", "000000000000000000", "000000000000000000" ], "log_channel": "000000000000000000" }
+  },
 
   "results": {
     "channel": "000000000000000000",
