@@ -5,8 +5,9 @@ const { parseCsv } = require('../results/resultsUpload');
 
 /*
  * Driver of the Day: /dotd posts a poll from a race CSV (the one /results
- * listen posts), one button per driver ("P2 · Glow ▲4"). One vote per person:
- * press another driver to move it, the same one to take it back. Counts stay
+ * listen posts): the standings and a "Vote" button, which opens a panel only the
+ * voter sees, one button per driver ("P2 · Glow ▲4"), their vote in green. One
+ * vote per person: press another driver to move it, the same one to take it back. Counts stay
  * hidden until it closes (48 h), then the buttons are disabled and the winner
  * and top 3 are posted as a reply. Who can start one: config "dotd"
  * ({ "<server id>" | "main": { "roles": [...] } }, "main" = GUILD_ID).
@@ -17,11 +18,11 @@ const storeFile = path.join(__dirname, '../../data/dotd.json');
 const configPath = path.join(__dirname, '../../config.json');
 const DURATION_MS = 48 * 60 * 60 * 1000;
 const CHECK_EVERY_MS = 60 * 1000;
-const MAX_DRIVERS = 24; // 5 rows of 5 buttons, the last one is "My vote"
+const MAX_DRIVERS = 25; // the voting panel: 5 rows of 5 buttons
 const PER_ROW = 5;
 const COLOR = '#f1c40f';
-const VOTE = 'dotd_vote_';
-const MINE = 'dotd_mine';
+const OPEN = 'dotd_open';
+const VOTE = 'dotd_vote_'; // dotd_vote_<poll message id>_<driver index>
 
 function readAll() {
     try { return JSON.parse(fs.readFileSync(storeFile, 'utf-8')); } catch { return {}; }
@@ -88,6 +89,15 @@ function result(d) {
 
 const ts = (ms, f) => `<t:${Math.floor(ms / 1000)}:${f}>`;
 
+// One line per driver: "`P2 ` **Glow** ▲4 · from P6"
+function standings(drivers) {
+    return drivers.map(d => {
+        const pos = (d.dnf ? 'DNF' : `P${d.finish}`).padEnd(3, ' ');
+        const marks = (d.pole ? ' 🟣' : '') + (d.fastest ? ' ⏱️' : '');
+        return `\`${pos}\` **${d.name}**${change(d)}${marks}${d.grid ? ` · from P${d.grid}` : ''}`;
+    }).join('\n');
+}
+
 function pollView(poll) {
     const votes = Object.keys(poll.votes).length;
     const embed = new EmbedBuilder()
@@ -96,24 +106,30 @@ function pollView(poll) {
         .setDescription(
             (poll.closed
                 ? 'Voting is closed. The result is in the reply below.'
-                : 'Who was your driver of the day? Press their name to vote.\n' +
-                  'One vote each: press another driver to change it, or the same one to take it back. ' +
-                  'Votes stay hidden until the poll closes.') +
-            '\n\n-# ▲▼ positions gained or lost from the grid · 🟣 pole · ⏱️ fastest lap')
+                : 'Who was your driver of the day? Press **Vote** to pick one. Votes stay hidden until the poll closes.') +
+            `\n\n${standings(poll.drivers)}\n\n-# ▲▼ positions gained or lost from the grid · 🟣 pole · ⏱️ fastest lap`)
         .addFields(
             { name: 'Votes', value: `**${votes}**`, inline: true },
             { name: poll.closed ? 'Closed' : 'Closes', value: poll.closed ? ts(poll.closesAt, 'f') : `${ts(poll.closesAt, 'f')} (${ts(poll.closesAt, 'R')})`, inline: true }
         );
 
+    const vote = new ButtonBuilder().setCustomId(OPEN).setLabel('Vote').setEmoji('🗳️').setStyle(ButtonStyle.Primary).setDisabled(poll.closed);
+    return { embeds: [embed], components: [new ActionRowBuilder().addComponents(vote)] };
+}
+
+// The voter's own panel (only they see it), with their vote in green.
+function panelView(messageId, poll, userId) {
+    const mine = poll.votes[userId];
     const buttons = poll.drivers.map((d, i) => new ButtonBuilder()
-        .setCustomId(VOTE + i)
+        .setCustomId(`${VOTE}${messageId}_${i}`)
         .setLabel(label(d))
-        .setStyle(d.dnf ? ButtonStyle.Secondary : ButtonStyle.Primary)
-        .setDisabled(poll.closed));
-    buttons.push(new ButtonBuilder().setCustomId(MINE).setLabel('My vote').setStyle(ButtonStyle.Secondary).setDisabled(poll.closed));
+        .setStyle(i === mine ? ButtonStyle.Success : ButtonStyle.Secondary));
     const rows = [];
     for (let i = 0; i < buttons.length; i += PER_ROW) rows.push(new ActionRowBuilder().addComponents(buttons.slice(i, i + PER_ROW)));
-    return { embeds: [embed], components: rows };
+    const content = `🗳️ **Driver of the Day · ${poll.title}**\n` + (mine == null
+        ? 'Press a driver to vote for them.'
+        : `You voted for **${poll.drivers[mine].name}**. Press another driver to change it, or the same one to take it back.`);
+    return { content, components: rows };
 }
 
 function winnerView(poll) {
@@ -174,35 +190,35 @@ async function start(interaction) {
     return interaction.editReply('✅ Driver of the Day poll posted.');
 }
 
-const isDotdButton = id => id.startsWith(VOTE) || id === MINE;
+const isDotdButton = id => id === OPEN || id.startsWith(VOTE);
+const isClosed = poll => !poll || poll.closed || Date.now() >= poll.closesAt;
 
 async function handleButton(interaction) {
-    const messageId = interaction.message.id;
-    const poll = readAll()[messageId];
-    if (!poll || poll.closed || Date.now() >= poll.closesAt) {
-        return interaction.reply({ content: '🔒 This poll is closed.', flags: MessageFlags.Ephemeral });
-    }
     const userId = interaction.user.id;
 
-    if (interaction.customId === MINE) {
-        const i = poll.votes[userId];
-        return interaction.reply({ content: i == null ? 'You haven\'t voted yet.' : `🗳️ You voted for **${poll.drivers[i].name}**.`, flags: MessageFlags.Ephemeral });
+    // "Vote" on the poll: open the voter's own panel.
+    if (interaction.customId === OPEN) {
+        const poll = readAll()[interaction.message.id];
+        if (isClosed(poll)) return interaction.reply({ content: '🔒 This poll is closed.', flags: MessageFlags.Ephemeral });
+        return interaction.reply({ ...panelView(interaction.message.id, poll, userId), flags: MessageFlags.Ephemeral });
     }
 
-    const index = Number(interaction.customId.slice(VOTE.length));
+    // A driver in the panel: vote, change it or take it back, then redraw the panel.
+    const [messageId, i] = interaction.customId.slice(VOTE.length).split('_');
+    const index = Number(i);
+    const poll = readAll()[messageId];
+    if (isClosed(poll)) return interaction.update({ content: '🔒 This poll is closed.', components: [] });
     if (!poll.drivers[index]) return interaction.reply({ content: '⚠️ Unknown driver.', flags: MessageFlags.Ephemeral });
-    let reply;
     const updated = update(messageId, p => {
-        if (p.votes[userId] === index) {
-            delete p.votes[userId];
-            reply = `↩️ Vote for **${p.drivers[index].name}** taken back.`;
-        } else {
-            reply = p.votes[userId] == null ? `✅ You voted for **${p.drivers[index].name}**.` : `🔁 Vote changed to **${p.drivers[index].name}**.`;
-            p.votes[userId] = index;
-        }
+        if (p.votes[userId] === index) delete p.votes[userId];
+        else p.votes[userId] = index;
     });
-    await interaction.reply({ content: reply, flags: MessageFlags.Ephemeral });
-    await interaction.message.edit({ ...pollView(updated), allowedMentions: { parse: [] } }).catch(() => { });
+    await interaction.update(panelView(messageId, updated, userId));
+
+    // The vote count on the poll.
+    const channel = await interaction.client.channels.fetch(updated.channelId).catch(() => null);
+    const message = await channel?.messages.fetch(messageId).catch(() => null);
+    await message?.edit({ ...pollView(updated), allowedMentions: { parse: [] } }).catch(() => { });
 }
 
 async function close(client, messageId) {
