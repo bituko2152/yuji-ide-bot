@@ -2,10 +2,10 @@ const fs = require('fs');
 const path = require('path');
 const { AttachmentBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
 const starterStore = require('./starterStore');
-const { getWindow, mondayUtc, WEEK_MS } = require('./starterCalendar');
+const { getWindow, weekStartAt, WEEK_MS } = require('./starterCalendar');
 const { renderBoard } = require('./starterBoard');
 
-const TICK_MS = 60 * 1000;     // 1 min is plenty to catch Monday 00:00 UTC
+const TICK_MS = 60 * 1000;     // 1 min is plenty to catch the start of the week
 const TEAM_SLOTS = 2;
 const BOARD_DEBOUNCE_MS = 1500;
 
@@ -351,7 +351,7 @@ function setRoundInText(text, cat, roundName) {
 
 async function syncReports(client, config) {
     const now = Date.now();
-    const weekStart = mondayUtc(new Date(now));
+    const weekStart = weekStartAt(now);
     const meta = starterStore.getMeta();
     if (meta.reportsWeekStart === weekStart) return;
 

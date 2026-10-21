@@ -21,7 +21,7 @@ const { getWindow } = require('../starters/starterCalendar');
  *     "uro_roles": ["<roles that can see the participants>"],
  *     "lobby_limit": 18,   (only text: lobby is first come, first served)
  *     "limit": 18,         (optional: cap the check, the rest go to reserve)
- *     "open":  { "day": "wednesday", "time": "18:00" },   (UTC)
+ *     "open":  { "day": "wednesday", "time": "18:00" },   (UTC as in summer: one hour later in winter)
  *     "close": { "day": "saturday",  "time": "17:45" },   (UTC, first one after publishing)
  *     "season": 9, "format": "AB",   (optional: follows the PC leagues' calendar, starters
  *                                     "first_race_date": round in the title, nothing on break weeks)
@@ -31,6 +31,8 @@ const { getWindow } = require('../starters/starterCalendar');
  * data/racechecks.json: { "<name>": { weekKey, messageId, closesAt, open,
  *   drivers: [ { userId, name, at } ] } }   (in join order)
  */
+
+const { europe } = require('../core/europeTime');
 
 const storeFile = path.join(__dirname, '../../data/racechecks.json');
 const configPath = path.join(__dirname, '../../config.json');
@@ -55,14 +57,14 @@ function update(name, fn) {
     return all[name];
 }
 
-// This week's moment (UTC) for { day, time }, the week starting on Monday.
+// This week's moment for { day, time }, the week starting on Monday.
 function weekMoment(now, { day, time }) {
     const [h, m] = String(time).split(':').map(Number);
     const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), h, m || 0));
     const fromMonday = (now.getUTCDay() + 6) % 7;
     const target = (DAYS.indexOf(String(day).toLowerCase()) + 6) % 7;
     d.setUTCDate(d.getUTCDate() - fromMonday + target);
-    return d;
+    return new Date(europe(d.getTime()));
 }
 
 // First { day, time } strictly after a moment.

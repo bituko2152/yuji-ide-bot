@@ -13,7 +13,7 @@ const { roundThisWeek } = require('./leagueSchedule');
  * config.json:
  *   "mocks": {
  *     "channel": "<channel id>", "role": "<role pinged>",
- *     "time": "19:00", "notice_minutes": 10,          (UTC)
+ *     "time": "19:00", "notice_minutes": 10,          (UTC as in summer: one hour later in winter)
  *     "lobby_name": "Yuji Mocks", "car_class": "3805310984",
  *     "schedule_channels": { "UL": "<channel>", ... },
  *     "days": { "monday": { "format": "UL length", "league": "UL", "races": 2 },
@@ -26,6 +26,8 @@ const { roundThisWeek } = require('./leagueSchedule');
  * and "quali_laps" (default 3, also settable for every day in "mocks").
  * data/mocks.json: { date } of the last mock run (so a restart doesn't run it twice).
  */
+
+const { europe } = require('../core/europeTime');
 
 const storeFile = path.join(__dirname, '../../data/mocks.json');
 const configPath = path.join(__dirname, '../../config.json');
@@ -44,7 +46,7 @@ let active = null; // the lobby host while a mock is running
 
 function startOf(now, time) {
     const [h, m] = String(time || '19:00').split(':').map(Number);
-    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), h, m || 0)).getTime();
+    return europe(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), h, m || 0));
 }
 
 function embed(cfg, day, startAt, status, color = '#3498db') {

@@ -1,3 +1,5 @@
+const { europe } = require('../core/europeTime');
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 const WEEK_MS = 7 * DAY_MS;
 
@@ -12,12 +14,23 @@ function mondayUtc(date) {
 }
 
 /**
+ * Start of the league week that contains `now`: Monday 00:00 UTC, one hour
+ * later in European winter time (see europeTime). Returned as that week's
+ * Monday 00:00 UTC, which identifies the week.
+ */
+function weekStartAt(now) {
+    const monday = mondayUtc(new Date(now));
+    return now < europe(monday) ? monday - WEEK_MS : monday;
+}
+
+/**
  * Returns the starters window that is active at `now` for a category:
  *  - { status: 'before' }                       -> the calendar hasn't started yet
  *  - { open: false, weekStart, closesAt }       -> break week, no starters
  *  - { open: true, weekStart, closesAt, roundName } -> race week
  *
- * The window opens Monday 00:00 UTC, or for the leagues listed in
+ * Times are UTC as in European summer time, one hour later in winter
+ * (services/core/europeTime.js). The window opens Monday 00:00 UTC, or for the leagues listed in
  * config.starters.opens ({ "day", "time", "leagues": [...] }) at that time,
  * and closes at config.starters.closes[cat]. Both are UTC, inside the race
  * week (Monday-Sunday); closes is "HH:MM" (on race day: the same weekday as
@@ -36,22 +49,22 @@ function weekMoment(when, config, weekStart) {
         ? DAYS.indexOf(String(spec.day).toLowerCase())
         : new Date(`${config.starters.first_race_date}T00:00:00Z`).getUTCDay(); // race day
     if (day < 0) return null;
-    return weekStart + ((day + 6) % 7) * DAY_MS + (h * 60 + m) * 60 * 1000;
+    return europe(weekStart + ((day + 6) % 7) * DAY_MS + (h * 60 + m) * 60 * 1000);
 }
 
 function closingTime(cat, config, weekStart) {
-    return weekMoment(config.starters.closes?.[cat], config, weekStart) ?? weekStart + WEEK_MS;
+    return weekMoment(config.starters.closes?.[cat], config, weekStart) ?? europe(weekStart + WEEK_MS);
 }
 
 function openingTime(cat, config, weekStart) {
     const opens = config.starters.opens;
-    return (opens?.leagues || []).includes(cat) ? weekMoment(opens, config, weekStart) ?? weekStart : weekStart;
+    return (opens?.leagues || []).includes(cat) ? weekMoment(opens, config, weekStart) ?? europe(weekStart) : europe(weekStart);
 }
 
 function getWindow(cat, config, now = Date.now()) {
     const s = config.starters;
     const firstWeekStart = mondayUtc(new Date(`${s.first_race_date}T00:00:00Z`));
-    const weekStart = mondayUtc(new Date(now));
+    const weekStart = weekStartAt(now);
     const idx = Math.round((weekStart - firstWeekStart) / WEEK_MS);
 
     if (idx < 0) return { status: 'before' };
@@ -101,4 +114,4 @@ function reportRound(cat, config, now = Date.now()) {
     return null;
 }
 
-module.exports = { getWindow, reportRound, mondayUtc, WEEK_MS };
+module.exports = { getWindow, reportRound, mondayUtc, weekStartAt, WEEK_MS };

@@ -2,7 +2,7 @@
 
 **Yuji Ide** runs the day-to-day operations of an online racing community built around the game
 [Ultimate Racing 2D 2](https://store.steampowered.com/app/1285230/). The community has two Discord
-servers, seven leagues and races every week. Admins used to do everything below by hand. The bot
+servers, eight leagues and races every week. Admins used to do everything below by hand. The bot
 now handles it, and it has been running in production for the whole league season.
 
 Built with **Node.js** and **discord.js v14**. Its core is a reverse-engineered UDP game protocol,
@@ -161,6 +161,6 @@ Everything specific to the community (channel and role IDs, leagues, schedules) 
 
 ---
 
-*Unofficial community project, not affiliated with Applimazing (the developer of Ultimate Racing 2D 2).*
+*Community project, built with the knowledge and consent of Applimazing (the developer of Ultimate Racing 2D 2).*
 
 © Marco. All rights reserved: the code is published to show my work. It is not licensed for reuse.
