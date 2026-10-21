@@ -4,6 +4,7 @@ const { handleReportComponent, isReportComponent } = require('../reports/reportS
 const { handleStarterButton } = require('../starters/starterService');
 const { handleRaceCheckButton } = require('../racecheck/raceCheckService');
 const { handleUploadComponent, isUploadComponent } = require('../results/resultsUpload');
+const { handleButton: handleDotdButton, isDotdButton } = require('../dotd/dotdService');
 
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
 
@@ -78,6 +79,10 @@ async function handleButtonInteraction(interaction) {
     }
     if (isUploadComponent(interaction.customId)) {
         await handleUploadComponent(interaction);
+        return true;
+    }
+    if (isDotdButton(interaction.customId)) {
+        await handleDotdButton(interaction);
         return true;
     }
     return false;
