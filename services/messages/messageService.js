@@ -53,8 +53,8 @@ const denied = interaction => interaction.reply({ content: '❌ You don\'t have 
 
 // ---------------------------------------------------------------- mentions
 
-// A form can't pick mentions like the chat box does, so "@Challenger League" or
-// "@Bituko" typed as text become real mentions: role names (longest first, so
+// A form can't pick mentions like the chat box does, so "@Challenger League",
+// "@Bituko" or "#starters" typed as text become real mentions: role names (longest first, so
 // "@Challenger League" wins over "@Challenger"), then members by name.
 async function toMentions(guild, text) {
     const roles = [...guild.roles.cache.values()]
@@ -63,6 +63,14 @@ async function toMentions(guild, text) {
     for (const role of roles) {
         const escaped = role.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         text = text.replace(new RegExp(`@${escaped}(?![\\w])`, 'gi'), `<@&${role.id}>`);
+    }
+    // "#general" / "#🏁・race-results" -> channel links (longest names first, like roles).
+    const channels = [...guild.channels.cache.values()]
+        .filter(c => c.name && !c.isThread?.())
+        .sort((a, b) => b.name.length - a.name.length);
+    for (const channel of channels) {
+        const escaped = channel.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        text = text.replace(new RegExp(`#${escaped}(?![\\w-])`, 'gi'), `<#${channel.id}>`);
     }
     const names = [...new Set([...text.matchAll(/@([\w.]{2,32})/g)].map(m => m[1]))];
     for (const name of names) {
@@ -79,7 +87,8 @@ async function toMentions(guild, text) {
 function fromMentions(guild, text) {
     return text
         .replace(/<@&(\d+)>/g, (m, id) => (guild.roles.cache.get(id) ? `@${guild.roles.cache.get(id).name}` : m))
-        .replace(/<@!?(\d+)>/g, (m, id) => (guild.members.cache.get(id) ? `@${guild.members.cache.get(id).user.username}` : m));
+        .replace(/<@!?(\d+)>/g, (m, id) => (guild.members.cache.get(id) ? `@${guild.members.cache.get(id).user.username}` : m))
+        .replace(/<#(\d+)>/g, (m, id) => (guild.channels.cache.get(id) ? `#${guild.channels.cache.get(id).name}` : m));
 }
 
 // ---------------------------------------------------------------- images
