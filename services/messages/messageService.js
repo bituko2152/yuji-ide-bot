@@ -6,7 +6,8 @@ const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, Messag
  * /message posts a plain message as the bot; "Edit message" (right click ->
  * Apps) lets anyone with one of that server's roles change it later. Roles and
  * the edit log channel per server in config "messages" ("main" = GUILD_ID).
- * Only messages sent with /message can be edited (data/messages.json).
+ * Only messages sent with /message can be edited (data/messages.json). Every
+ * message sent and every edit is logged in the server's log channel.
  */
 
 const storeFile = path.join(__dirname, '../../data/messages.json');
@@ -75,7 +76,8 @@ async function handleModal(interaction) {
         // Role and user mentions ping on the first send only; @everyone/@here never.
         const sent = await interaction.channel.send({ content: text, allowedMentions: { parse: ['roles', 'users'] } });
         remember(sent.id, { guildId: interaction.guildId, channelId: sent.channelId, by: interaction.user.id, at: Date.now() });
-        return interaction.reply({ content: '✅ Message sent.', flags: MessageFlags.Ephemeral });
+        await interaction.reply({ content: '✅ Message sent.', flags: MessageFlags.Ephemeral });
+        return log(interaction, `📝 <@${interaction.user.id}> sent ${sent.url}\n${block(text, 1800)}`);
     }
 
     const messageId = interaction.customId.slice(EDIT_ID.length);
@@ -86,19 +88,21 @@ async function handleModal(interaction) {
 
     await message.edit({ content: text, allowedMentions: { parse: [] } });
     await interaction.reply({ content: '✅ Message edited.', flags: MessageFlags.Ephemeral });
-    await logEdit(interaction, message, before, text);
+    await log(interaction, `✏️ <@${interaction.user.id}> edited ${message.url}\n**Before:**\n${block(before, 900)}\n**After:**\n${block(text, 900)}`);
 }
 
-// Who edited, link, text before and after (in the server's log channel).
-async function logEdit(interaction, message, before, after) {
+// The text in a code block, cut to fit in one log message.
+function block(text, max) {
+    const t = (text.length > max ? text.slice(0, max) + '…' : text).replace(/```/g, '`​``');
+    return '```\n' + t + '\n```';
+}
+
+// Every message sent and every edit (who, link, text), in the server's log channel.
+async function log(interaction, content) {
     const channelId = serverSettings(interaction.guildId)?.log_channel;
     const channel = channelId && await interaction.client.channels.fetch(channelId).catch(() => null);
     if (!channel) return console.warn(`⚠️ [Messages] Log channel ${channelId} not found.`);
-    const quote = s => (s.length > 900 ? s.slice(0, 900) + '…' : s).replace(/```/g, '`​``');
-    await channel.send({
-        content: `✏️ <@${interaction.user.id}> edited ${message.url}\n**Before:**\n\`\`\`\n${quote(before)}\n\`\`\`\n**After:**\n\`\`\`\n${quote(after)}\n\`\`\``,
-        allowedMentions: { parse: [] }
-    }).catch(err => console.error('❌ [Messages] Log:', err.message));
+    await channel.send({ content, allowedMentions: { parse: [] } }).catch(err => console.error('❌ [Messages] Log:', err.message));
 }
 
 module.exports = { openNew, openEdit, handleModal, isMessageComponent };
