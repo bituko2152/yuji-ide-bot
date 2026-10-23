@@ -358,10 +358,10 @@ function createLobbyHost({ name, password = '', carClass = 'formulaa', className
                 }
                 break;
             }
-            case '18': { // *18|1 from the first finisher's game: start everybody's countdown
-                if (session && f[1] === '1') firstFinisher();
-                break;
-            }
+            // *18 from a player's game is not a finish: it also comes mid-session (in the
+            // recordings, laps before the end; a player quitting sends it too), and taken
+            // as one it ended the session for everybody. Finishes come from *11 / *19.
+            case '18': break;
             case '29': { const p = byId(f[1]); if (p) p.ping = Number(f[2]); break; }
             // Content check: *47|1|id|class:0/track:1 (0 = that driver doesn't have the
             // Workshop car / track). Shown in the lobby list like the game does.
@@ -387,7 +387,8 @@ function createLobbyHost({ name, password = '', carClass = 'formulaa', className
                 const car = session.cars.get(Number(f[1])) || { laps: 0 };
                 Object.assign(car, { finished: true, total: Number(f[2]), best: Number(f[4]) || car.best });
                 session.cars.set(Number(f[1]), car);
-                if (session.grid.every((p, i) => session.cars.get(i + 1)?.finished)) endSession('all finished');
+                // Everybody still in the lobby finished (whoever left doesn't count).
+                if (session.grid.every((p, i) => !byId(p.id) || session.cars.get(i + 1)?.finished)) endSession('all finished');
                 else firstFinisher();
                 break;
             }
