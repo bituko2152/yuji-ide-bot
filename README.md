@@ -15,7 +15,7 @@ which lets the bot read live races and host game lobbies itself, without running
 | Area | Feature |
 |---|---|
 | **Race control** | `/report`: incident reports with steward voting, penalty points and a corrected result posted as a reply |
-| **League admin** | Weekly *starters* board (`/attend`): sign-ups per team, approval from the team owner, opening and closing times per league, rendered as an image |
+| **League admin** | Weekly *starters* board (`/attend`): sign-ups per team, approval from the team owner, team owners setting their lineup (`/setattendance`), opening and closing times per league, rendered as an image |
 | | Driver contracts (`/offercontract`) with automatic role assignment, on two servers |
 | | Anonymous weekly attendance check, run on the league calendar so it skips break weeks |
 | **Live races** | Live list of online game lobbies, updated from the game's master servers |

@@ -1,6 +1,6 @@
 {
   "extra_servers": [
-    { "id": "000000000000000000", "commands": [ "offercontract", "attend", "removeattendance", "message", "Edit message", "dotd" ] }
+    { "id": "000000000000000000", "commands": [ "offercontract", "attend", "removeattendance", "setattendance", "message", "Edit message", "dotd" ] }
   ],
   "lobby_channels": [ "000000000000000000", "000000000000000000" ],
   "steam_news": [
