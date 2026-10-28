@@ -132,7 +132,7 @@ function leagueRoleMention(cat, config) {
 function buildContent(round, closed, mention = '') {
     if (closed) return `🔒 **Starters ${round.roundName}** — closed.`;
     const ts = Math.floor(round.closesAt / 1000);
-    return `${mention ? mention + '\n' : ''}📋 **Starters ${round.roundName}**\nCloses <t:${ts}:F> (<t:${ts}:R>). Use \`/attend\` in this channel to check in, \`/removeattendance\` to remove yourself.`;
+    return `${mention ? mention + '\n' : ''}📋 **Starters ${round.roundName}**\nCloses <t:${ts}:F> (<t:${ts}:R>). Use \`/attend\` in this channel to check in, \`/removeattendance\` to remove yourself. Team owners: \`/setattendance\` signs up drivers of your team.`;
 }
 
 function buildBoardFile(cat, round, config) {
