@@ -132,9 +132,14 @@ function createLobbyHost({ name, password = '', carClass = 'formulaa', className
         const r = [...cls.rest];
         // Drivers with a car: the session's grid, or (in the lobby) whoever isn't spectating.
         // Yuji doesn't count: counting him added a phantom car.
-        r[1] = String(Math.max(1, session ? session.grid.length : racers().length));
+        const drivers = String(Math.max(1, session ? session.grid.length : racers().length));
+        r[1] = drivers;
         r[3] = String(settings.qualiLaps);
         r[8] = n === 3 ? '1' : '0';
+        // num_players_race: how many drivers each game waits for before the chequered
+        // flag (a driver finishing or quitting counts one). It was always 1, so the first
+        // driver to finish or quit put the flag out for everybody.
+        r[12] = drivers;
         r[17] = `rain ${settings.rain}%`;
         // League settings: pit speed x0.85, medium +3 %, hard +1 %, slipstream
         // amount x0 / length x0.3 / width x0.8 / increase x0.1 / decrease x0.5.
@@ -228,7 +233,11 @@ function createLobbyHost({ name, password = '', carClass = 'formulaa', className
         else session.weather.startMessages();
         msg('94', ['*15', '0', hostId]); // loaded as a spectator ("1" would add a car)
         toAll('*7', hostId, 0, 1);
-        reliable(['102', lobby, '0', '1', SESSION_NAMES[n]]);
+        // The session's laps, as the game's host does: the server passes it to every driver
+        // (*26|0|<laps>|Racing). Sending 1 made each game think the race was one lap long,
+        // so the first driver to finish or quit put the chequered flag out for everybody.
+        session.lap = 0;
+        reliable(['102', lobby, '0', String(n === 3 ? settings.laps : settings.qualiLaps), SESSION_NAMES[n]]);
         toAll('*25', 1);
 
         // Everybody loaded (or 45 s), then the start.
@@ -371,10 +380,22 @@ function createLobbyHost({ name, password = '', carClass = 'formulaa', className
             case '11': { // lap: *11|car|lap|total
                 if (!session) break;
                 const car = session.cars.get(Number(f[1])) || { laps: 0 };
+                const lapTime = Number(f[2]);
+                // The same lap can arrive more than once (other drivers' or spectators' games
+                // report it too): counted twice, a car "finished" at 4 of 8 laps. A new lap
+                // needs at least half a lap of race time since the last one counted.
+                const at = Date.now();
+                if (car.lastLapAt && at - car.lastLapAt < Math.max(5000, (car.best ?? lapTime) * 500)) break;
+                car.lastLapAt = at;
                 car.laps++;
-                car.best = Math.min(car.best ?? Infinity, Number(f[2]));
+                car.best = Math.min(car.best ?? Infinity, lapTime);
                 if (Number(f[3]) > 0) car.total = Number(f[3]);
                 session.cars.set(Number(f[1]), car);
+                // The lap the leader is on, for the lobby list ("Racing 3/7"), as the game's host sends it.
+                if (session.n === 3 && car.laps + 1 > session.lap && car.laps < settings.laps) {
+                    session.lap = car.laps + 1;
+                    reliable(['103', lobby, String(session.lap)]);
+                }
                 // Race: the first car to complete every lap starts the 60 s for the rest
                 // (a player's own *18 can come before the last lap, so it's ignored).
                 if (session.n === 3 && car.laps >= settings.laps) firstFinisher();
@@ -385,6 +406,9 @@ function createLobbyHost({ name, password = '', carClass = 'formulaa', className
                 // the first one finishes. Counted, it ended the session for everybody right then.
                 if (!session || !(Number(f[2]) > 0)) break;
                 const car = session.cars.get(Number(f[1])) || { laps: 0 };
+                // Race: only a car that ran every lap has finished (a driver retiring or
+                // quitting isn't a finish; that one showed everybody the chequered flag).
+                if (session.n === 3 && car.laps < settings.laps) break;
                 Object.assign(car, { finished: true, total: Number(f[2]), best: Number(f[4]) || car.best });
                 session.cars.set(Number(f[1]), car);
                 // Everybody still in the lobby finished (whoever left doesn't count).
