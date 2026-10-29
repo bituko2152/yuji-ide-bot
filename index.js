@@ -1,5 +1,8 @@
 require('dotenv').config();
 
+// Timestamps on every console line, and a copy in data/logs/ (kept 14 days).
+require('./services/core/logFile').install();
+
 const {
     Client,
     GatewayIntentBits,
