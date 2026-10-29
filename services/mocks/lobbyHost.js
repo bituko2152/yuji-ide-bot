@@ -132,9 +132,14 @@ function createLobbyHost({ name, password = '', carClass = 'formulaa', className
         const r = [...cls.rest];
         // Drivers with a car: the session's grid, or (in the lobby) whoever isn't spectating.
         // Yuji doesn't count: counting him added a phantom car.
-        r[1] = String(Math.max(1, session ? session.grid.length : racers().length));
+        const drivers = String(Math.max(1, session ? session.grid.length : racers().length));
+        r[1] = drivers;
         r[3] = String(settings.qualiLaps);
         r[8] = n === 3 ? '1' : '0';
+        // num_players_race: how many drivers each game waits for before the chequered
+        // flag (a driver finishing or quitting counts one). It was always 1, so the first
+        // driver to finish or quit put the flag out for everybody.
+        r[12] = drivers;
         r[17] = `rain ${settings.rain}%`;
         // League settings: pit speed x0.85, medium +3 %, hard +1 %, slipstream
         // amount x0 / length x0.3 / width x0.8 / increase x0.1 / decrease x0.5.
@@ -371,16 +376,7 @@ function createLobbyHost({ name, password = '', carClass = 'formulaa', className
             // Workshop car / track). Shown in the lobby list like the game does.
             case '47': { const p = byId(f[2]); if (p && f[3]) { p.flag = f[3]; sendRoster(); log(`📦 [Mocks] ${p.name}: ${f[3]}`); } break; }
             case '42': { const p = byId(f[1]); if (p && p.id !== hostId) { p.spectator = f[2] === '1'; sendRoster(); } break; }
-            case '15': { // *15|1|id: that driver loaded the session
-                if (!session || session.loaded.has(f[2])) break;
-                session.loaded.add(f[2]);
-                // Every game counts the session's drivers from these, and only the host gets
-                // them: passed on to everybody, so each game waits for all the drivers (one
-                // leaving counts as finished). Not passed on, each game waited for itself
-                // alone, and the first driver to finish or quit ended the race for everyone.
-                if (f[1] === '1') toAll('*15', 1, f[2]);
-                break;
-            }
+            case '15': if (session) session.loaded.add(f[2]); break;
             case '11': { // lap: *11|car|lap|total
                 if (!session) break;
                 const car = session.cars.get(Number(f[1])) || { laps: 0 };
