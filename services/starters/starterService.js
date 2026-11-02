@@ -382,8 +382,11 @@ async function syncReports(client, config) {
                     .setTitle('📢 Reports are now open')
                     .setDescription(`Incident reports are open for the races that were just run:\n\n${lines.join('\n')}\n\nUse \`/report\` to submit your incident.`)
                     .setTimestamp();
-                // Ping every category's league role, not just the ones that raced.
-                const roleIds = Object.values(config.league_driver_roles || {}).filter(id => id && id !== '???');
+                // Ping every league with /report, not just the ones that raced (the mobile
+                // leagues' roles are in league_driver_roles too, but belong to another server).
+                const roleIds = Object.keys(config.report_leagues || {})
+                    .map(cat => config.league_driver_roles?.[cat])
+                    .filter(id => id && id !== '???');
                 await channel.send({
                     content: roleIds.map(id => `<@&${id}>`).join(' ') || undefined,
                     embeds: [embed],
@@ -397,6 +400,31 @@ async function syncReports(client, config) {
     }
 
     starterStore.setMeta({ ...meta, reportsWeekStart: weekStart });
+}
+
+// ---------------------------------------------------------------- race reminder
+
+// Shortly before each PC league race, reminds the hosts to run /results listen.
+// config.starters.race_reminder = { "channel", "role", "minutes" }; the race time is
+// the league's closing time. Sent once per round (kept in the meta store).
+async function remindHosts(client, config) {
+    const cfg = config.starters.race_reminder;
+    if (!cfg?.channel) return;
+    const before = (cfg.minutes ?? 5) * 60 * 1000;
+    for (const cat of Object.keys(config.report_leagues || {})) {
+        const win = getWindow(cat, config);
+        if (!win.open || Date.now() < win.closesAt - before || Date.now() >= win.closesAt) continue;
+        const meta = starterStore.getMeta();
+        if (meta.reminders?.[cat] === win.roundName) continue;
+        starterStore.setMeta({ ...meta, reminders: { ...meta.reminders, [cat]: win.roundName } });
+        const channel = await client.channels.fetch(cfg.channel).catch(() => null);
+        if (!channel) { console.warn('⚠️ [Starters] Race reminder channel not found.'); return; }
+        await channel.send({
+            content: `${cfg.role ? `<@&${cfg.role}> ` : ''}**${win.roundName}** starts <t:${Math.floor(win.closesAt / 1000)}:R>. Don't forget to run \`/results listen\` for the race!`,
+            allowedMentions: { roles: cfg.role ? [cfg.role] : [] }
+        });
+        console.log(`⏰ [Starters] Race reminder sent for ${win.roundName}.`);
+    }
 }
 
 // ---------------------------------------------------------------- scheduler
@@ -452,6 +480,7 @@ async function tick(client) {
             }
         }
 
+        await remindHosts(client, config).catch(err => console.error('❌ [Starters] Race reminder failed:', err.message));
         await syncReports(client, config).catch(err => console.error('❌ [Reports] Error syncing reports:', err.message));
     } finally {
         running = false;
