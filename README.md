@@ -23,6 +23,7 @@ which lets the bot read live races and host game lobbies itself, without running
 | | **HTML race replays**: a self-contained page with a TV-style timing tower, onboard camera, minimap, weather and pit stops, and best-lap ordering with sector times for qualifying |
 | | `/upload replay`: publishes a replay on the league website |
 | **Practice** | Daily practice lobbies **hosted by the bot itself**: track, laps and weather from the league calendar, then qualifying and races back to back |
+| **Race control** | `/incidents`: stewards get a list of possible incidents, tyre rule checks and connection gaps from a race replay |
 | **Data** | `/results upload`: imports results into a Supabase (PostgreSQL) database, with a preview and manual matching for unknown drivers |
 | | `/record`: top lap times from the game's Steam leaderboards |
 | **Community** | Steam news posts and store sales announced automatically, plus a player count in the bot's status |
