@@ -75,6 +75,10 @@ const {
 } = require('./services/racecheck/raceCheckService');
 
 const {
+    startTeamColors
+} = require('./services/core/teamColors');
+
+const {
     startDotdLoop
 } = require('./services/dotd/dotdService');
 
@@ -202,6 +206,9 @@ client.once('clientReady', async () => {
 
     // Daily cleanup: removes polls/contracts older than 15 days from disk.
     startCleanupLoop();
+
+    // PC team colors from Supabase, before the starters board is drawn.
+    await startTeamColors();
 
     // Weekly starters (open/close rounds) + auto-advance of the /report round.
     startStarterLoop(client);

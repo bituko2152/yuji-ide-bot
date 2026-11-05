@@ -2,6 +2,7 @@ const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, Butt
 const { randomUUID } = require('crypto');
 const starterStore = require('../services/starters/starterStore');
 const S = require('../services/starters/starterService');
+const { teamColor } = require('../services/core/teamColors');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -105,7 +106,7 @@ module.exports = {
         const reqId = randomUUID().slice(0, 8);
 
         const embed = new EmbedBuilder()
-            .setColor(team.color || '#5865F2')
+            .setColor(teamColor(team) || '#5865F2')
             .setTitle('📝 Starter request')
             .setThumbnail(member.user.displayAvatarURL({ dynamic: true, size: 256 }))
             .setDescription(

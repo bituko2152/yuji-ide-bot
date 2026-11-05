@@ -78,7 +78,7 @@ async function toMentions(guild, text) {
         const lower = name.toLowerCase();
         const member = found?.find(m => [m.user.username, m.displayName, m.user.globalName]
             .some(n => n?.toLowerCase() === lower));
-        if (member) text = text.replace(new RegExp(`@${name.replace(/\./g, '\\.')}(?![\\w.])`, 'g'), `<@${member.id}>`);
+        if (member) text = text.replace(new RegExp(`@${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w.])`, 'g'), `<@${member.id}>`);
     }
     return text;
 }

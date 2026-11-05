@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { AttachmentBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
 const starterStore = require('./starterStore');
+const { teamColor } = require('../core/teamColors');
 const { getWindow, weekStartAt, WEEK_MS } = require('./starterCalendar');
 const { renderBoard } = require('./starterBoard');
 
@@ -23,7 +24,7 @@ function categoryFromChannel(channelId, config) {
 function teamsOf(cat, config) {
     return Object.entries(config.team_roles || {})
         .filter(([, t]) => t.league === cat)
-        .map(([roleId, t]) => ({ roleId, ...t }));
+        .map(([roleId, t]) => ({ roleId, ...t, color: teamColor(t) }));
 }
 
 function independentSlots(cat, config) {
