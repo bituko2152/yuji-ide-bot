@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { randomUUID } = require('crypto');
 const contractStore = require('../services/contracts/contractStore');
+const { teamColor } = require('../services/core/teamColors');
 
 function loadConfig() {
     return JSON.parse(fs.readFileSync(path.join(__dirname, '../config.json'), 'utf-8'));
@@ -16,7 +17,7 @@ function loadConfig() {
 function getManagedTeamRoles(member, config) {
     return Object.entries(config.team_roles)
         .filter(([roleId]) => member.roles.cache.has(roleId))
-        .map(([roleId, info]) => ({ roleId, ...info }));
+        .map(([roleId, info]) => ({ roleId, ...info, color: teamColor(info) }));
 }
 
 module.exports = {
@@ -103,10 +104,10 @@ module.exports = {
 
         const contractId = randomUUID();
 
-        const teamColor = team.color || '#2ecc71'; // hex from config, falls back to the old default green
+        const embedColor = team.color || '#2ecc71'; // falls back to the old default green
 
         const embed = new EmbedBuilder()
-            .setColor(teamColor)
+            .setColor(embedColor)
             .setTitle('🏎️ Driver Contract Offer')
             .setThumbnail(target.displayAvatarURL({ dynamic: true, size: 256 }))
             .setDescription(

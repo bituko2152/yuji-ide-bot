@@ -76,7 +76,7 @@ module.exports = {
 
         const lines = entries.map((e, i) => {
             const pos = MEDALS[e.rank - 1] || `\`${String(e.rank).padStart(2)}.\``;
-            const name = names[i] ? escapeMarkdown(names[i]).replace(/[[\]]/g, '\\$&') : 'Unknown driver';
+            const name = names[i] ? escapeMarkdown(names[i]).replace(/[\\[\]]/g, '\\$&') : 'Unknown driver';
             return `${pos} \`${formatTime(e.score)}\` — [${name}](${profileUrl(e.steamId)})`;
         });
 

@@ -220,7 +220,14 @@ async function contractData({ discordId, league, teamShort, fromShort, seat, fal
     // A short name can belong to two teams over the years: the one in this season's lineup, if any.
     const lineup = new Set((await select('lineups', 'team_id', { season_id: `eq.${season.id}` })).map(l => l.team_id));
     const teamFor = async short => {
-        const rows = await select('teams', 'id,name,logo_url,color', { short_name: `eq.${short}` });
+        let rows = await select('teams', 'id,name,logo_url,color', { short_name: `eq.${short}` });
+        if (!rows.length) { // A team known by another short name, under that name (config "ASN" is teams "RSR").
+            const aliases = await select('team_aliases', 'alias,team_id', { short_name: `eq.${short}` });
+            if (aliases.length) {
+                rows = await select('teams', 'id,name,logo_url,color', { id: `in.(${[...new Set(aliases.map(x => x.team_id))].join(',')})` });
+                rows = rows.map(t => ({ ...t, name: aliases.find(x => x.team_id === t.id)?.alias || t.name }));
+            }
+        }
         return rows.find(t => lineup.has(t.id)) || rows.find(t => t.logo_url) || rows[0] || null;
     };
     const team = await teamFor(teamShort);

@@ -3,6 +3,7 @@ const path = require('path');
 const { EmbedBuilder, AttachmentBuilder } = require('discord.js');
 const contractStore = require('./contractStore');
 const { renderContractCard, contractData } = require('./contractCard');
+const { teamColor } = require('../core/teamColors');
 
 const CHECK_INTERVAL_MS = 5 * 60 * 1000; // 5 min is plenty of resolution for a 24h window
 
@@ -84,10 +85,10 @@ async function grantContract(client, contract) {
     }
     if (channel && !announced) {
         const teamInfo = config.team_roles[contract.teamRoleId];
-        const teamColor = teamInfo?.color || '#2ecc71';
+        const embedColor = teamColor(teamInfo) || '#2ecc71';
 
         const embed = new EmbedBuilder()
-            .setColor(teamColor)
+            .setColor(embedColor)
             .setTitle('🏁 Contract confirmed')
             .setThumbnail(member.user.displayAvatarURL({ dynamic: true, size: 256 }))
             .setDescription(`${member} has officially joined **${contract.teamName}** (${contract.categoria}) as a **${seatName(contract)}**. Team and league roles have been granted.`)
