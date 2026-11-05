@@ -24,10 +24,10 @@ module.exports = {
         .setName('offercontract')
         .setDescription('Offer a driver contract for your team to a server member')
         .addUserOption(opt => opt.setName('driver').setDescription('Player to offer the contract to').setRequired(true))
-        .addStringOption(opt => opt.setName('seat').setDescription('Seat type').setRequired(true)
+        .addStringOption(opt => opt.setName('seat').setDescription('Driver type').setRequired(true)
             .addChoices(
-                { name: 'Main Seat', value: 'main' },
-                { name: 'Reserve Seat', value: 'reserve' }
+                { name: 'Main Driver', value: 'main' },
+                { name: 'Reserve Driver', value: 'reserve' }
             )),
 
     async execute(interaction) {
@@ -35,7 +35,7 @@ module.exports = {
         const member = interaction.member;
         const target = interaction.options.getUser('driver');
         const seatType = interaction.options.getString('seat'); // 'main' | 'reserve' — cosmetic only
-        const seatLabel = seatType === 'main' ? 'Main Seat' : 'Reserve Seat';
+        const seatLabel = seatType === 'main' ? 'Main Driver' : 'Reserve Driver';
 
         if (target.bot) {
             return interaction.reply({ content: '❌ You cannot offer a contract to a bot.', ephemeral: true });
@@ -110,7 +110,7 @@ module.exports = {
             .setTitle('🏎️ Driver Contract Offer')
             .setThumbnail(target.displayAvatarURL({ dynamic: true, size: 256 }))
             .setDescription(
-                `${target} has received an offer to join **${team.name}** (${categoria}) as **${seatLabel}**.\n\n` +
+                `${target} has received an offer to join **${team.name}** (${categoria}) as a **${seatLabel}**.\n\n` +
                 `Offered by: ${interaction.user}\n` +
                 `Once accepted, after **24 hours** you will automatically be granted the team role and the **${categoria}** league role.`
             )
