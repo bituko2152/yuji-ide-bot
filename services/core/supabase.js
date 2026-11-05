@@ -47,4 +47,7 @@ const insert = (table, rows) =>
 const remove = (table, filters) =>
     request('DELETE', table, { params: filters });
 
-module.exports = { select, insert, remove };
+const update = (table, filters, values) =>
+    request('PATCH', table, { params: filters, body: values });
+
+module.exports = { select, insert, remove, update };

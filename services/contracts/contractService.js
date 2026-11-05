@@ -1,12 +1,40 @@
 const fs = require('fs');
 const path = require('path');
-const { EmbedBuilder } = require('discord.js');
+const { EmbedBuilder, AttachmentBuilder } = require('discord.js');
 const contractStore = require('./contractStore');
+const { renderContractCard, contractData } = require('./contractCard');
 
 const CHECK_INTERVAL_MS = 5 * 60 * 1000; // 5 min is plenty of resolution for a 24h window
 
 function loadConfig() {
     return JSON.parse(fs.readFileSync(path.join(__dirname, '../../config.json'), 'utf-8'));
+}
+
+// The PC leagues' announcement: "@driver moves from X to Y as a Main Driver" and the banner.
+// Throws if anything fails: the caller then posts the plain message instead.
+// "Main Driver" (contracts offered before the rename still say "Main Seat").
+const seatName = contract => (contract.seatLabel ? contract.seatLabel.replace(/ Seat$/, ' Driver') : 'Driver');
+
+async function announceWithCard(channel, member, contract, fromShort) {
+    const { card, teamName, fromName } = await contractData({
+        discordId: member.id,
+        league: contract.categoria,
+        teamShort: contract.teamName,
+        fromShort,
+        seat: seatName(contract).replace(/ Driver$/, ''),
+        fallbackName: member.displayName,
+        avatarUrl: member.user.displayAvatarURL({ extension: 'png', size: 128 })
+    });
+    const png = await renderContractCard(card);
+    const seat = seatName(contract);
+    const embed = new EmbedBuilder()
+        .setColor(card.color || '#2b2d31')
+        .setDescription(fromName
+            ? `${member} moves from **${fromName}** to **${teamName}** as a **${seat}**.`
+            : `${member} joins **${teamName}** as a **${seat}**.`)
+        .setImage('attachment://contract.png')
+        .setFooter({ text: `Roles granted · Contract #${contract.id.slice(0, 8)}` });
+    await channel.send({ embeds: [embed], files: [new AttachmentBuilder(png, { name: 'contract.png' })], allowedMentions: { users: [member.id] } });
 }
 
 async function grantContract(client, contract) {
@@ -41,11 +69,20 @@ async function grantContract(client, contract) {
     contractStore.updateContract(contract.id, c => { c.granted = true; c.status = 'completed'; });
 
     // DM the player directly...
-    member.send(`🏁 Congratulations! You've been officially assigned to **${contract.teamName}** (${contract.categoria}) as **${contract.seatLabel || 'driver'}**.`).catch(() => { });
+    member.send(`🏁 Congratulations! You've been officially assigned to **${contract.teamName}** (${contract.categoria}) as a **${seatName(contract)}**.`).catch(() => { });
 
     // ...and also post publicly in the original channel, so everyone can see it went through.
     const channel = await guild.channels.fetch(contract.channelId).catch(() => null);
-    if (channel) {
+    // PC leagues get the banner; if it can't be made, the plain message below goes out.
+    let announced = false;
+    if (channel && config.report_leagues?.[contract.categoria]) {
+        const fromShort = rolesToRemove.map(id => config.team_roles[id]?.name).find(Boolean) || null;
+        announced = await announceWithCard(channel, member, contract, fromShort).then(() => true, err => {
+            console.error('❌ [Contracts] Banner failed:', err.message);
+            return false;
+        });
+    }
+    if (channel && !announced) {
         const teamInfo = config.team_roles[contract.teamRoleId];
         const teamColor = teamInfo?.color || '#2ecc71';
 
@@ -53,7 +90,7 @@ async function grantContract(client, contract) {
             .setColor(teamColor)
             .setTitle('🏁 Contract confirmed')
             .setThumbnail(member.user.displayAvatarURL({ dynamic: true, size: 256 }))
-            .setDescription(`${member} has officially joined **${contract.teamName}** (${contract.categoria}) as **${contract.seatLabel || 'driver'}**. Team and league roles have been granted.`)
+            .setDescription(`${member} has officially joined **${contract.teamName}** (${contract.categoria}) as a **${seatName(contract)}**. Team and league roles have been granted.`)
             .setFooter({ text: `Contract #${contract.id.slice(0, 8)}` })
             .setTimestamp();
         channel.send({ embeds: [embed] }).catch(() => { });
