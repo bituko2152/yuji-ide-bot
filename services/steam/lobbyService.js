@@ -31,6 +31,8 @@ const RESPONSE_WAIT_MS = 2500;
 const UPDATE_EVERY_MS = 3 * 60 * 1000; // free hosting caps CPU: don't poll every minute
 
 const storeFile = path.join(__dirname, '../../data/lobbyMessage.json');
+const LIST_TITLE = 'Online lobbies';
+const UNKNOWN_MESSAGE = 10008; // Discord: the message no longer exists
 
 function loadConfig() {
     return JSON.parse(fs.readFileSync(path.join(__dirname, '../../config.json'), 'utf-8'));
@@ -163,13 +165,25 @@ async function updateChannel(client, channelId, previousId, embed) {
     // the channel unread). Otherwise re-post it at the bottom, silently, and
     // delete the old copy so only one exists.
     if (previousId && channel.lastMessageId === previousId) {
-        const edited = await channel.messages.edit(previousId, { embeds: [embed] }).catch(() => null);
-        if (edited) return previousId;
+        const error = await channel.messages.edit(previousId, { embeds: [embed] }).then(() => null, err => err);
+        if (!error) return previousId;
+        // Only a message that's gone is posted again; any other failure (Discord
+        // slow or down) waits for the next update instead of piling up copies.
+        if (error.code !== UNKNOWN_MESSAGE) throw error;
     }
 
     const sent = await channel.send({ embeds: [embed], flags: MessageFlags.SuppressNotifications });
-    if (previousId) await channel.messages.delete(previousId).catch(() => { });
+    await removeOtherCopies(channel, sent.id);
     return sent.id;
+}
+
+// Every older copy of the list near the bottom of the channel goes, also ones
+// whose id was lost (a send that timed out but went through later).
+async function removeOtherCopies(channel, keepId) {
+    const recent = await channel.messages.fetch({ limit: 30 }).catch(() => null);
+    const copies = [...(recent?.values() || [])].filter(m => m.id !== keepId && m.author.id === channel.client.user.id
+        && m.embeds[0]?.title?.includes(LIST_TITLE));
+    for (const m of copies) await m.delete().catch(() => { });
 }
 
 async function updateLobbyMessages(client) {
@@ -189,7 +203,14 @@ async function updateLobbyMessages(client) {
 }
 
 function startLobbyLoop(client) {
-    const tick = () => updateLobbyMessages(client).catch(err => console.error('❌ [Lobbies]', err));
+    // A slow update (Discord lagging) doesn't overlap the next one.
+    let running = false;
+    const tick = async () => {
+        if (running) return;
+        running = true;
+        await updateLobbyMessages(client).catch(err => console.error('❌ [Lobbies]', err));
+        running = false;
+    };
     tick();
     setInterval(tick, UPDATE_EVERY_MS);
     console.log('🌐 [Lobbies] Online lobby list started.');
