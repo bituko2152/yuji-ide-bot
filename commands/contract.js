@@ -4,6 +4,12 @@ const path = require('path');
 const { randomUUID } = require('crypto');
 const contractStore = require('../services/contracts/contractStore');
 const { teamColor } = require('../services/core/teamColors');
+const lineups = require('../services/lineups/lineupService');
+
+// Offers accepted and still waiting for their 24 h: their seat is taken.
+const waitingFor = (categoria, teamRoleId, seatType) => Object.values(contractStore.allContracts())
+    .filter(c => c.status === 'accepted' && !c.granted && c.categoria === categoria && c.teamRoleId === teamRoleId && c.seatType === seatType)
+    .map(c => c.toUserId);
 
 function loadConfig() {
     return JSON.parse(fs.readFileSync(path.join(__dirname, '../config.json'), 'utf-8'));
@@ -21,6 +27,7 @@ function getManagedTeamRoles(member, config) {
 }
 
 module.exports = {
+    waitingFor,
     data: new SlashCommandBuilder()
         .setName('offercontract')
         .setDescription('Offer a driver contract for your team to a server member')
@@ -65,7 +72,13 @@ module.exports = {
 
         // Among the teams this manager holds, keep only the one(s) that
         // belong to this channel's league.
-        const teamsInThisLeague = managedTeams.filter(t => t.league === categoria);
+        let teamsInThisLeague = managedTeams.filter(t => t.league === categoria);
+        // An owner who is also a driver / reserve elsewhere: the team they run, from the lineup.
+        if (teamsInThisLeague.length > 1) {
+            const staffOf = lineups.staffTeams(categoria, member.id);
+            const run = teamsInThisLeague.filter(t => staffOf.includes(t.roleId));
+            if (run.length) teamsInThisLeague = run;
+        }
         if (teamsInThisLeague.length === 0) {
             return interaction.reply({
                 content: `❌ None of your teams belong to the **${categoria}** league, so you can't offer here.`,
@@ -100,6 +113,10 @@ module.exports = {
         const targetMember = await interaction.guild.members.fetch(target.id).catch(() => null);
         if (!targetMember) {
             return interaction.reply({ content: '❌ Could not find that member in the server.', ephemeral: true });
+        }
+
+        if (!lineups.hasFreeSeat(categoria, team.roleId, seatType, waitingFor(categoria, team.roleId, seatType))) {
+            return interaction.reply({ content: `❌ The ${seatLabel.toLowerCase()} seat is full or there are no free seats at **${team.name}**: use /release first.`, ephemeral: true });
         }
 
         const contractId = randomUUID();
