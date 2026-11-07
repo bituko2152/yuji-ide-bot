@@ -4,6 +4,7 @@ const { EmbedBuilder, AttachmentBuilder } = require('discord.js');
 const contractStore = require('./contractStore');
 const { renderContractCard, contractData } = require('./contractCard');
 const { teamColor } = require('../core/teamColors');
+const lineups = require('../lineups/lineupService');
 
 const CHECK_INTERVAL_MS = 5 * 60 * 1000; // 5 min is plenty of resolution for a 24h window
 
@@ -53,7 +54,9 @@ async function grantContract(client, contract) {
         .filter(([, info]) => info.league === contract.categoria)
         .map(([roleId]) => roleId);
 
-    const rolesToRemove = sameLeagueTeamRoleIds.filter(id => id !== contract.teamRoleId && member.roles.cache.has(id));
+    // A team they're owner / principal of stays: they can drive for another team.
+    const staffOf = lineups.staffTeams(contract.categoria, member.id);
+    const rolesToRemove = sameLeagueTeamRoleIds.filter(id => id !== contract.teamRoleId && !staffOf.includes(id) && member.roles.cache.has(id));
     if (rolesToRemove.length) {
         await member.roles.remove(rolesToRemove).catch(err => console.error('❌ [Contracts] Error removing old roles:', err.message));
     }
@@ -68,6 +71,8 @@ async function grantContract(client, contract) {
     await member.roles.add(contract.ligaRoleId).catch(err => console.error('❌ [Contracts] Error adding league role:', err.message));
 
     contractStore.updateContract(contract.id, c => { c.granted = true; c.status = 'completed'; });
+    lineups.signDriver(client, contract.categoria, contract.teamRoleId, member.id, contract.seatType)
+        .catch(err => console.error('❌ [Lineups] Signing not shown:', err.message));
 
     // DM the player directly...
     member.send(`🏁 Congratulations! You've been officially assigned to **${contract.teamName}** (${contract.categoria}) as a **${seatName(contract)}**.`).catch(() => { });

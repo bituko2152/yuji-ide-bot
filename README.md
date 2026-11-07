@@ -16,7 +16,9 @@ which lets the bot read live races and host game lobbies itself, without running
 |---|---|
 | **Race control** | `/report`: incident reports with steward voting, penalty points and a corrected result posted as a reply |
 | **League admin** | Weekly *starters* board (`/attend`): sign-ups per team, approval from the team owner, team owners setting their lineup (`/setattendance`), opening and closing times per league, rendered as an image |
-| | Driver contracts (`/offercontract`) with automatic role assignment, on two servers |
+| | Driver contracts (`/offercontract`) with automatic role assignment, on two servers; PC leagues announce each signing with a generated banner (driver, number, flag, team logo and car) |
+| | `/release`: drivers leave their team, or a team owner ends a contract by mutual agreement |
+| | **Live lineups**: each PC league's grid is a bot message kept up to date with contracts, ordered by last season's constructors' standings, editable by staff with a format check, and renewed every season (drivers' team roles removed) |
 | | Anonymous weekly attendance check, run on the league calendar so it skips break weeks |
 | **Live races** | Live list of online game lobbies, updated from the game's master servers |
 | | `/results listen`: joins a lobby *invisibly* and posts the qualifying and race classification as CSV |
@@ -89,6 +91,8 @@ Track and car images come from Steam, downloaded with the bot's own Steam sessio
 - **Calendar logic**: weekly windows, break weeks, seasons split in halves, and opening and closing
   times per league all come from one calendar module
   ([`starterCalendar.js`](services/starters/starterCalendar.js)).
+- **Single source for league data**: team colors, logos, liveries, flags and standings come from
+  the Supabase database the league website also uses, cached in memory where a message can't wait.
 - **Config stays hand-editable**: the bot updates `config.json` in place with text edits instead of
   rewriting the whole file, so the admins' layout survives.
 
@@ -116,7 +120,8 @@ commands/           One file per slash command, loaded automatically
 services/
   core/             Button router, cleanup, presence, Supabase client
   reports/          Race reports and steward votes
-  contracts/        Driver contracts
+  contracts/        Driver contracts and the signing banner
+  lineups/          Live league lineups and season change
   starters/         Weekly starters board and league calendar
   racecheck/        Anonymous weekly attendance check
   results/          Lobby listener (live results) and results import
@@ -143,7 +148,7 @@ npm start
 |---|---|
 | `DISCORD_TOKEN`, `CLIENT_ID`, `GUILD_ID` | Bot login and slash command registration |
 | `STEAM_REFRESH_TOKEN` | Leaderboards and replay assets. Create it with `npm run steam-login` |
-| `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` | Results import |
+| `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` | Results import, team colors, signing banners, lineups |
 | `REPLAYS_UPLOAD_KEY` | Publishing replays to the league website |
 
 Everything specific to the community (channel and role IDs, leagues, schedules) lives in

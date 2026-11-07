@@ -1,6 +1,6 @@
 {
   "extra_servers": [
-    { "id": "000000000000000000", "commands": [ "offercontract", "attend", "removeattendance", "setattendance", "message", "Edit message", "dotd" ] }
+    { "id": "000000000000000000", "commands": [ "offercontract", "release", "attend", "removeattendance", "setattendance", "message", "Edit message", "dotd" ] }
   ],
   "lobby_channels": [ "000000000000000000", "000000000000000000" ],
   "steam_news": [
@@ -18,6 +18,7 @@
     "<mobile server id>": { "roles": [ "000000000000000000", "000000000000000000", "000000000000000000" ], "log_channel": "000000000000000000" }
   },
 
+  "lineups": { "UL": "000000000000000000", "CL": "000000000000000000", "JL": "000000000000000000" },
   "dotd": {
     "main":               { "roles": [ "000000000000000000" ] },
     "<mobile server id>": { "roles": [ "000000000000000000" ] }

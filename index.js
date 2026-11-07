@@ -83,6 +83,10 @@ const {
 } = require('./services/dotd/dotdService');
 
 const {
+    startLineupLoop
+} = require('./services/lineups/lineupService');
+
+const {
     startResultsLoop,
     stopAll: stopListeningAll
 } = require('./services/results/resultsWatcher');
@@ -224,6 +228,9 @@ client.once('clientReady', async () => {
 
     // Closes Driver of the Day polls after 48 h and posts the winner.
     startDotdLoop(client);
+
+    // League lineup messages: kept up to date with contracts, new one each season.
+    startLineupLoop(client);
 
     // Reports of the current rounds still on the old poll -> S26 penalty system.
     migrateOldPolls(client).catch(err => console.error('❌ [Reports] Poll migration failed:', err.message));
