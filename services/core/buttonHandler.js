@@ -38,6 +38,11 @@ async function handleContractButton(interaction) {
     }
 
     if (action === 'accept') {
+        const { waitingFor } = require('../../commands/contract');
+        const { hasFreeSeat } = require('../lineups/lineupService');
+        if (!hasFreeSeat(contract.categoria, contract.teamRoleId, contract.seatType, waitingFor(contract.categoria, contract.teamRoleId, contract.seatType))) {
+            return interaction.reply({ content: '❌ That seat was filled in the meantime: the team has to /release someone first.', ephemeral: true });
+        }
         const now = Date.now();
         const grantAt = now + TWENTY_FOUR_HOURS_MS;
         contractStore.updateContract(contractId, c => {
@@ -67,6 +72,10 @@ async function handleButtonInteraction(interaction) {
     }
     if (interaction.customId.startsWith('contract_')) {
         await handleContractButton(interaction);
+        return true;
+    }
+    if (interaction.customId.startsWith('release_')) {
+        await require('../../commands/release').handleReleaseButton(interaction);
         return true;
     }
     if (interaction.customId.startsWith('starter_')) {

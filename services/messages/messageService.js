@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const lineups = require('../lineups/lineupService');
 const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, MessageFlags } = require('discord.js');
 
 /*
@@ -38,12 +39,12 @@ function allowed(interaction) {
     return Boolean(settings && interaction.member?.roles.cache.some(r => settings.roles.includes(r.id)));
 }
 
-function modal(customId, title, value) {
+function modal(customId, title, value, max = MAX) {
     const input = new TextInputBuilder()
         .setCustomId('text')
         .setLabel('Message')
         .setStyle(TextInputStyle.Paragraph)
-        .setMaxLength(MAX)
+        .setMaxLength(max)
         .setRequired(true);
     if (value) input.setValue(value);
     return new ModalBuilder().setCustomId(customId).setTitle(title).addComponents(new ActionRowBuilder().addComponents(input));
@@ -115,7 +116,9 @@ async function openEdit(interaction) {
     if (message.author.id !== interaction.client.user.id || !readAll()[message.id]) {
         return interaction.reply({ content: '❌ Only messages sent with /message can be edited.', flags: MessageFlags.Ephemeral });
     }
-    return interaction.showModal(modal(EDIT_ID + message.id, 'Edit message', fromMentions(interaction.guild, message.content)));
+    const lineup = lineups.lineupOfMessage(message.id);
+    return interaction.showModal(modal(EDIT_ID + message.id, lineup ? `Edit ${lineup} lineup` : 'Edit message',
+        fromMentions(interaction.guild, lineups.messageText(message)), lineup ? lineups.MAX_TEXT : MAX));
 }
 
 const isMessageComponent = customId => customId === NEW_ID || customId.startsWith(EDIT_ID);
@@ -123,7 +126,8 @@ const isMessageComponent = customId => customId === NEW_ID || customId.startsWit
 async function handleModal(interaction) {
     if (!allowed(interaction)) return denied(interaction);
     await interaction.deferReply({ flags: MessageFlags.Ephemeral }); // finding the mentioned members can take a moment
-    const text = (await toMentions(interaction.guild, interaction.fields.getTextInputValue('text'))).slice(0, MAX);
+    const isLineup = interaction.customId.startsWith(EDIT_ID) && lineups.lineupOfMessage(interaction.customId.slice(EDIT_ID.length));
+    const text = (await toMentions(interaction.guild, interaction.fields.getTextInputValue('text'))).slice(0, isLineup ? lineups.MAX_TEXT : MAX);
 
     if (interaction.customId === NEW_ID) {
         const images = pendingImages.get(interaction.user.id) || [];
@@ -143,8 +147,22 @@ async function handleModal(interaction) {
     const messageId = interaction.customId.slice(EDIT_ID.length);
     const message = await interaction.channel.messages.fetch(messageId).catch(() => null);
     if (!message) return interaction.editReply('❌ The message no longer exists.');
-    const before = message.content;
+    const before = lineups.messageText(message);
     if (before === text) return interaction.editReply('Nothing changed.');
+
+    // A league lineup: the text must keep its format, and becomes the stored grid.
+    if (lineups.lineupOfMessage(messageId)) {
+        const error = lineups.applyEdit(messageId, text);
+        if (error) return interaction.editReply(`❌ Not saved, the lineup format is broken: ${error}`);
+        await lineups.refreshMessage(interaction.client, lineups.lineupOfMessage(messageId));
+        await interaction.editReply('✅ Lineup updated.');
+        const after = lineups.messageText(await message.fetch().catch(() => message));
+        return log(interaction, `✏️ <@${interaction.user.id}> edited ${message.url}
+**Before:**
+${block(before, 900)}
+**After:**
+${block(after, 900)}`);
+    }
 
     // The images stay; only the text changes.
     await message.edit({ content: text, allowedMentions: { parse: [] } });
@@ -166,4 +184,4 @@ async function log(interaction, content) {
     await channel.send({ content, allowedMentions: { parse: [] } }).catch(err => console.error('❌ [Messages] Log:', err.message));
 }
 
-module.exports = { openNew, openEdit, handleModal, isMessageComponent };
+module.exports = { openNew, openEdit, handleModal, isMessageComponent, remember };
