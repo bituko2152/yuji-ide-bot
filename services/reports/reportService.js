@@ -1,3 +1,4 @@
+const { readConfig } = require('../core/config');
 const { reportRound } = require('../starters/starterCalendar');
 const fs = require('fs');
 const path = require('path');
@@ -47,7 +48,7 @@ const needsType = l => Boolean(l?.time);
 const validType = (l, t) => needsType(l) && (t === 'time' || t === 'position' || (t === 'warning' && l.warning));
 
 function loadConfig() {
-    return JSON.parse(fs.readFileSync(path.join(__dirname, '../../config.json'), 'utf-8'));
+    return readConfig();
 }
 
 function isSteward(member, config) {

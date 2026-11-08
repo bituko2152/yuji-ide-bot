@@ -1,3 +1,4 @@
+const { readConfig } = require('../services/core/config');
 const fs = require('fs');
 const path = require('path');
 const { SlashCommandBuilder } = require('discord.js');
@@ -8,7 +9,7 @@ const U = require('../services/results/resultsUpload');
 // members with one of config "results.allowed_roles"
 // (/results upload: "results.upload_roles" instead).
 function resultsConfig() {
-    const config = JSON.parse(fs.readFileSync(path.join(__dirname, '../config.json'), 'utf-8'));
+    const config = readConfig();
     return config.results || {};
 }
 

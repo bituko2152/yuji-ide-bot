@@ -1,3 +1,4 @@
+const { readConfig } = require('../core/config');
 const fs = require('fs');
 const path = require('path');
 const { TextDisplayBuilder, MessageFlags } = require('discord.js');
@@ -6,7 +7,7 @@ const { mondayUtc, weekStartAt, WEEK_MS } = require('../starters/starterCalendar
 
 /*
  * The current grid of each PC league, as one message per season in the
- * league's lineup channel (config "lineups": { "UL": "<channel id>", ... }):
+ * league's lineup channel (config leagues.<code>.channels.lineup):
  *
  *   # UL Season 26 - Autumn 2026
  *
@@ -35,7 +36,7 @@ const MAX_TEXT = 4000; // a text display holds 4000 characters, a plain message 
 const VERSION = 2; // a grid stored by an older version is read again from the channel
 const NUMBERS = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
 
-const loadConfig = () => JSON.parse(fs.readFileSync(path.join(__dirname, '../../config.json'), 'utf-8'));
+const loadConfig = () => readConfig();
 function readAll() {
     try { return JSON.parse(fs.readFileSync(storeFile, 'utf-8')); } catch { return {}; }
 }

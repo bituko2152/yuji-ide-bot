@@ -1,3 +1,4 @@
+const { readConfig } = require('../core/config');
 const fs = require('fs');
 const path = require('path');
 const { EmbedBuilder } = require('discord.js');
@@ -30,7 +31,7 @@ const CLAN_IMAGE_BASE = 'https://clan.akamai.steamstatic.com/images/';
 const storeFile = path.join(__dirname, '../../data/steamNews.json');
 
 function loadConfig() {
-    return JSON.parse(fs.readFileSync(path.join(__dirname, '../../config.json'), 'utf-8'));
+    return readConfig();
 }
 
 function readStore() {

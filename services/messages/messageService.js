@@ -1,3 +1,4 @@
+const { readConfig } = require('../core/config');
 const fs = require('fs');
 const path = require('path');
 const lineups = require('../lineups/lineupService');
@@ -29,7 +30,7 @@ function remember(messageId, data) {
 }
 
 function serverSettings(guildId) {
-    const config = JSON.parse(fs.readFileSync(path.join(__dirname, '../../config.json'), 'utf-8'));
+    const config = readConfig();
     const servers = config.messages || {};
     return servers[guildId === process.env.GUILD_ID ? 'main' : guildId] || null;
 }

@@ -1,3 +1,4 @@
+const { readConfig } = require('../core/config');
 const fs = require('fs');
 const path = require('path');
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
@@ -35,11 +36,10 @@ const { getWindow } = require('../starters/starterCalendar');
 const { europe } = require('../core/europeTime');
 
 const storeFile = path.join(__dirname, '../../data/racechecks.json');
-const configPath = path.join(__dirname, '../../config.json');
 const CHECK_EVERY_MS = 60 * 1000;
 const DAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 
-const loadConfig = () => JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+const loadConfig = () => readConfig();
 const checksConfig = () => (loadConfig().race_checks || []).filter(c => c.name && c.channel);
 
 function readAll() {

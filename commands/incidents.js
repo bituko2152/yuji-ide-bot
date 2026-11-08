@@ -1,3 +1,4 @@
+const { readConfig } = require('../services/core/config');
 const { SlashCommandBuilder, AttachmentBuilder, MessageFlags } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
@@ -8,7 +9,11 @@ const MAX_BYTES = 25 * 1024 * 1024;
 const TYRE_RULE = /^(UL|CL)/i;
 
 function allowed(interaction, config) {
-    return Boolean(config.stewards_role && interaction.member?.roles.cache.has(config.stewards_role));
+    // Main server: the stewards role. Others: their roles in config "incidents".
+    const roles = interaction.guildId === process.env.GUILD_ID
+        ? [config.stewards_role]
+        : config.incidents?.[interaction.guildId]?.roles || [];
+    return roles.some(id => id && interaction.member?.roles.cache.has(id));
 }
 
 function analyse(html) {
@@ -51,7 +56,7 @@ module.exports = {
             .setRequired(true)),
 
     async execute(interaction) {
-        const config = JSON.parse(fs.readFileSync(path.join(__dirname, '../config.json'), 'utf-8'));
+        const config = readConfig();
         if (!allowed(interaction, config)) {
             return interaction.reply({ content: '❌ Only stewards can use this command.', flags: MessageFlags.Ephemeral });
         }

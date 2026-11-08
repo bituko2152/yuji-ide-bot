@@ -1,3 +1,4 @@
+const { readConfig } = require('../core/config');
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
@@ -229,7 +230,7 @@ const pendingAll = plan => [...unresolved(plan), ...plan.rows.filter(r => r.reso
 const INDEPENDENT = { id: null, label: 'Independent' };
 
 function loadConfig() {
-    return JSON.parse(fs.readFileSync(path.join(__dirname, '../../config.json'), 'utf-8'));
+    return readConfig();
 }
 
 /*

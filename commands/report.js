@@ -1,3 +1,4 @@
+const { readConfig } = require('../services/core/config');
 const { reportRound } = require('../services/starters/starterCalendar');
 const { SlashCommandBuilder } = require('discord.js');
 const fs = require('fs');
@@ -25,8 +26,7 @@ module.exports = {
             option.setName('description').setDescription('Brief description of what happened').setRequired(true)),
 
     async execute(interaction) {
-        const configPath = path.join(__dirname, '../config.json');
-        const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+        const config = readConfig();
 
         const category = interaction.options.getString('category');
         const categorySettings = config.report_leagues[category];

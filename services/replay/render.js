@@ -1,3 +1,4 @@
+const { readConfig } = require('../core/config');
 const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
@@ -102,7 +103,7 @@ async function minimapScore(buf, pts) {
 
 function leagueWorkshopTracks() {
     try {
-        const list = JSON.parse(fs.readFileSync(path.join(__dirname, '../../config.json'), 'utf-8')).records?.workshop_tracks || [];
+        const list = readConfig().records?.workshop_tracks || [];
         return (Array.isArray(list) ? list : Object.keys(list)).map(String);
     } catch {
         return [];

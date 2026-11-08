@@ -1,3 +1,4 @@
+const { readConfig } = require('../services/core/config');
 const fs = require('fs');
 const path = require('path');
 const { SlashCommandBuilder } = require('discord.js');
@@ -21,7 +22,7 @@ const Q2_LEAGUES = ['UL', 'CL'];         // also a Q2 ("quali2"), as in /results
 const SUFFIX = { race: '', sprint: '-sprint', quali: '-quali', quali2: '-quali2' };
 const isQuali = session => session === 'quali' || session === 'quali2';
 
-const resultsConfig = () => JSON.parse(fs.readFileSync(path.join(__dirname, '../config.json'), 'utf-8')).results || {};
+const resultsConfig = () => readConfig().results || {};
 
 function replayPath(league, season, division, round, session) {
     return `${league.toLowerCase()}/s${season}${division ? division.toLowerCase() : ''}/r${round}${SUFFIX[session]}.html`;
