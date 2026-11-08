@@ -1,3 +1,4 @@
+const { readConfig } = require('../core/config');
 const fs = require('fs');
 const path = require('path');
 const dgram = require('dgram');
@@ -34,7 +35,7 @@ const NO_TIME = 1e6;                // the game's "no time" values are >= 1,000,
 const SESSIONS = { 2: 'qualifying', 3: 'race' };
 
 function loadConfig() {
-    return JSON.parse(fs.readFileSync(path.join(__dirname, '../../config.json'), 'utf-8'));
+    return readConfig();
 }
 
 

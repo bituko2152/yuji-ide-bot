@@ -1,3 +1,4 @@
+const { readConfig } = require('../core/config');
 const fs = require('fs');
 const path = require('path');
 const { EmbedBuilder } = require('discord.js');
@@ -30,14 +31,13 @@ const { roundThisWeek } = require('./leagueSchedule');
 const { europe } = require('../core/europeTime');
 
 const storeFile = path.join(__dirname, '../../data/mocks.json');
-const configPath = path.join(__dirname, '../../config.json');
 const DAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 const WAIT_FOR_DRIVERS_MS = 10 * 60 * 1000; // nobody in the lobby at the start: wait this long
 const AFTER_QUALI_MS = 15 * 1000;           // qualifying -> race
 const BETWEEN_RACES_MS = 60 * 1000;         // race -> next qualifying
 const CLOSE_AFTER_MS = 2 * 60 * 1000;
 
-const loadConfig = () => JSON.parse(fs.readFileSync(configPath, 'utf-8')).mocks;
+const loadConfig = () => readConfig().mocks;
 const readStore = () => { try { return JSON.parse(fs.readFileSync(storeFile, 'utf-8')); } catch { return {}; } };
 const writeStore = data => { fs.mkdirSync(path.dirname(storeFile), { recursive: true }); fs.writeFileSync(storeFile, JSON.stringify(data, null, 2)); };
 const sleep = ms => new Promise(r => setTimeout(r, ms));

@@ -1,3 +1,4 @@
+const { readConfig } = require('../core/config');
 const fs = require('fs');
 const path = require('path');
 const dgram = require('dgram');
@@ -35,7 +36,7 @@ const LIST_TITLE = 'Online lobbies';
 const UNKNOWN_MESSAGE = 10008; // Discord: the message no longer exists
 
 function loadConfig() {
-    return JSON.parse(fs.readFileSync(path.join(__dirname, '../../config.json'), 'utf-8'));
+    return readConfig();
 }
 
 // data/lobbyMessage.json: { "<channelId>": "<messageId>" }

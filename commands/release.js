@@ -1,3 +1,4 @@
+const { readConfig } = require('../services/core/config');
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
@@ -12,7 +13,7 @@ const { teamColor } = require('../services/core/teamColors');
  * in the lineup and it's announced here.
  */
 
-const loadConfig = () => JSON.parse(fs.readFileSync(path.join(__dirname, '../config.json'), 'utf-8'));
+const loadConfig = () => readConfig();
 const leagueOf = (config, channelId) => Object.entries(config.league_channels || {}).find(([, id]) => id === channelId)?.[0];
 const teamsIn = (config, member, cat) => Object.entries(config.team_roles)
     .filter(([roleId, t]) => t.league === cat && member.roles.cache.has(roleId))

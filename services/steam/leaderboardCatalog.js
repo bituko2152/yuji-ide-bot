@@ -1,3 +1,4 @@
+const { readConfig } = require('../core/config');
 const fs = require('fs');
 const path = require('path');
 
@@ -100,7 +101,7 @@ function normalize(list) {
 // /record works, as one id or a list. Empty/"???" = anywhere.
 function recordsChannels() {
     try {
-        const r = JSON.parse(fs.readFileSync(path.join(__dirname, '../../config.json'), 'utf-8')).records || {};
+        const r = readConfig().records || {};
         return [r.channels ?? [], r.channel ?? []].flat().filter(id => id && id !== '???');
     } catch {
         return [];
@@ -109,7 +110,7 @@ function recordsChannels() {
 
 function workshopIds() {
     try {
-        const cfg = JSON.parse(fs.readFileSync(path.join(__dirname, '../../config.json'), 'utf-8')).records || {};
+        const cfg = readConfig().records || {};
         return { tracks: normalize(cfg.workshop_tracks), classes: normalize(cfg.workshop_classes) };
     } catch {
         return { tracks: {}, classes: {} };

@@ -1,3 +1,4 @@
+const { readConfig, setReportRounds } = require('../core/config');
 const fs = require('fs');
 const path = require('path');
 const { AttachmentBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
@@ -11,7 +12,7 @@ const TEAM_SLOTS = 2;
 const BOARD_DEBOUNCE_MS = 1500;
 
 function loadConfig() {
-    return JSON.parse(fs.readFileSync(path.join(__dirname, '../../config.json'), 'utf-8'));
+    return readConfig();
 }
 
 // ---------------------------------------------------------------- helpers
@@ -322,7 +323,6 @@ async function closeRound(client, cat) {
 
 // ---------------------------------------------------------------- reports
 
-const CONFIG_PATH = path.join(__dirname, '../../config.json');
 
 /**
  * Every Monday 00:00 UTC that follows a race week, the race that was just
@@ -330,26 +330,6 @@ const CONFIG_PATH = path.join(__dirname, '../../config.json');
  * reports are switched on, and ONE generic announcement is posted for all
  * leagues. Idempotent: it only fires once per week (tracked in _meta).
  */
-// report_leagues.<cat> = { active: true, round } written into the config.json
-// text in place; the whole file is only rewritten if that entry can't be found.
-function setRoundInText(text, cat, roundName) {
-    const start = text.indexOf('"report_leagues"');
-    const end = start < 0 ? -1 : text.indexOf('\n  }', start);
-    const entry = new RegExp(`("${cat}"\\s*:\\s*\\{)([^}]*)(\\})`);
-    if (start >= 0 && end > start && entry.test(text.slice(start, end))) {
-        const block = text.slice(start, end).replace(entry, (m, open, body, close) => {
-            body = body.replace(/("round"\s*:\s*")[^"]*(")/, `$1${roundName}$2`).replace(/("active"\s*:\s*)(true|false)/, '$1true');
-            return open + body + close;
-        });
-        const out = text.slice(0, start) + block + text.slice(end);
-        const parsed = JSON.parse(out).report_leagues?.[cat];
-        if (parsed?.round === roundName && parsed.active === true) return out;
-    }
-    const fresh = JSON.parse(text);
-    fresh.report_leagues[cat] = { ...(fresh.report_leagues[cat] || {}), active: true, round: roundName };
-    return JSON.stringify(fresh, null, 2);
-}
-
 async function syncReports(client, config) {
     const now = Date.now();
     const weekStart = weekStartAt(now);
@@ -365,11 +345,7 @@ async function syncReports(client, config) {
     }
 
     if (Object.keys(justRaced).length) {
-        // Re-read from disk right before writing so we don't clobber a /setround.
-        // Only the round values change in the text, so the file keeps its hand-made layout.
-        let text = fs.readFileSync(CONFIG_PATH, 'utf-8');
-        for (const [cat, roundName] of Object.entries(justRaced)) text = setRoundInText(text, cat, roundName);
-        fs.writeFileSync(CONFIG_PATH, text);
+        setReportRounds(justRaced);
 
         const channelId = config.report_announcements_channel;
         if (!channelId || channelId === '???') {

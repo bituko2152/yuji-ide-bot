@@ -93,8 +93,8 @@ Track and car images come from Steam, downloaded with the bot's own Steam sessio
   ([`starterCalendar.js`](services/starters/starterCalendar.js)).
 - **Single source for league data**: team colors, logos, liveries, flags and standings come from
   the Supabase database the league website also uses, cached in memory where a message can't wait.
-- **Config stays hand-editable**: the bot updates `config.json` in place with text edits instead of
-  rewriting the whole file, so the admins' layout survives.
+- **Config stays hand-editable**: `config.json` is organised by server and league and only people
+  change it; what the bot has to remember lives in `data/`.
 
 ---
 

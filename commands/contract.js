@@ -1,3 +1,4 @@
+const { readConfig } = require('../services/core/config');
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
@@ -12,7 +13,7 @@ const waitingFor = (categoria, teamRoleId, seatType) => Object.values(contractSt
     .map(c => c.toUserId);
 
 function loadConfig() {
-    return JSON.parse(fs.readFileSync(path.join(__dirname, '../config.json'), 'utf-8'));
+    return readConfig();
 }
 
 /**
@@ -105,7 +106,7 @@ module.exports = {
         const ligaJugadorRoleId = config.league_driver_roles?.[categoria];
         if (!ligaJugadorRoleId || ligaJugadorRoleId === '???') {
             return interaction.reply({
-                content: `❌ The player role for the **${categoria}** category isn't configured (league_driver_roles in config.json).`,
+                content: `❌ The player role for the **${categoria}** category isn't configured (leagues.${categoria}.roles.driver in config.json).`,
                 ephemeral: true
             });
         }

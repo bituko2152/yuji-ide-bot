@@ -1,32 +1,36 @@
 {
-  "extra_servers": [
-    { "id": "000000000000000000", "commands": [ "offercontract", "release", "attend", "removeattendance", "setattendance", "message", "Edit message", "dotd" ] }
-  ],
+  "servers": {
+    "main": {
+      "message_roles": [ "000000000000000000", "000000000000000000", "000000000000000000" ],
+      "log_channel": "000000000000000000",
+      "dotd_roles": [ "000000000000000000" ]
+    },
+    "mobile": {
+      "id": "000000000000000000",
+      "commands": [ "offercontract", "release", "attend", "removeattendance", "setattendance", "message", "Edit message", "dotd", "incidents" ],
+      "message_roles": [ "000000000000000000", "000000000000000000", "000000000000000000" ],
+      "log_channel": "000000000000000000",
+      "dotd_roles": [ "000000000000000000" ],
+      "incident_roles": [ "000000000000000000", "000000000000000000", "000000000000000000" ]
+    }
+  },
+
   "lobby_channels": [ "000000000000000000", "000000000000000000" ],
   "steam_news": [
     { "appid": 1285230, "name": "Ultimate Racing 2D 2", "channel": "000000000000000000" },
     { "appid": 3230780, "name": "Ultimate Rally 2D", "channel": "000000000000000000" }
   ],
 
-  "reports_channel": "000000000000000000",
-  "report_results_channel": "000000000000000000",
-  "report_announcements_channel": "000000000000000000",
-  "stewards_role": "000000000000000000",
-
-  "messages": {
-    "main":               { "roles": [ "000000000000000000", "000000000000000000" ], "log_channel": "000000000000000000" },
-    "<mobile server id>": { "roles": [ "000000000000000000", "000000000000000000", "000000000000000000" ], "log_channel": "000000000000000000" }
-  },
-
-  "lineups": { "UL": "000000000000000000", "CL": "000000000000000000", "JL": "000000000000000000" },
-  "dotd": {
-    "main":               { "roles": [ "000000000000000000" ] },
-    "<mobile server id>": { "roles": [ "000000000000000000" ] }
+  "reports": {
+    "channel": "000000000000000000",
+    "results_channel": "000000000000000000",
+    "announcements_channel": "000000000000000000",
+    "stewards_role": "000000000000000000"
   },
 
   "results": {
     "channel": "000000000000000000",
-    "allowed_roles": [ "000000000000000000", "000000000000000000", "000000000000000000", "000000000000000000" ],
+    "allowed_roles": [ "000000000000000000", "000000000000000000", "000000000000000000", "000000000000000000", "000000000000000000" ],
     "upload_roles": [ "000000000000000000", "000000000000000000" ]
   },
   "records": {
@@ -41,37 +45,118 @@
     }
   },
 
-  "report_leagues": {
-    "UL": { "active": true, "round": "ULS26R1" },
-    "CL": { "active": true, "round": "CLS23R1" },
-    "JL": { "active": true, "round": "JLS23AR1" },
-    "AL": { "active": true, "round": "ALS23AR1" }
-  },
-  "league_channels":      { "UL": "000000000000000000", "CL": "000000000000000000", "JL": "000000000000000000", "UMRL": "000000000000000000", "AMRL": "000000000000000000", "EMRL": "000000000000000000" },
-  "league_manager_roles": { "UL": "000000000000000000", "CL": "000000000000000000", "JL": "000000000000000000", "UMRL": "000000000000000000", "AMRL": "000000000000000000", "EMRL": "000000000000000000" },
-  "league_driver_roles":  { "UL": "000000000000000000", "CL": "000000000000000000", "JL": "000000000000000000", "AL": "000000000000000000", "UMRL": "000000000000000000", "AMRL": "000000000000000000", "EMRL": "000000000000000000", "OMRL": "000000000000000000" },
-  "seat_roles": {
-    "UMRL": { "main": "000000000000000000", "reserve": "000000000000000000" },
-    "AMRL": { "main": "000000000000000000", "reserve": "000000000000000000" },
-    "EMRL": { "main": "000000000000000000", "reserve": "000000000000000000" }
-  },
-  "team_roles": {
-    "<team role id>":   { "league": "UL", "name": "ABC", "color": "#cc180d" },
-    "<team role id 2>": { "league": "UMRL", "name": "XYZ", "color": "#2383ff" }
-  },
-
-  "starters": {
+  "calendar": {
     "first_race_date": "2026-10-04",
     "manager_role": [ "000000000000000000", "000000000000000000" ],
     "manager_users": [ "000000000000000000" ],
-    "race_reminder":     { "channel": "000000000000000000", "role": "000000000000000000", "minutes": 5 },
-    "channels":          { "UL": "000000000000000000", "CL": "000000000000000000", "JL": "000000000000000000", "AL": "000000000000000000", "UMRL": "000000000000000000", "AMRL": "000000000000000000", "EMRL": "000000000000000000" },
-    "opens":             { "day": "wednesday", "time": "18:00", "leagues": [ "UMRL", "AMRL", "EMRL" ] },
-    "closes":            { "UL": "17:50", "CL": "16:10", "JL": "15:15", "AL": "14:30", "UMRL": { "day": "sunday", "time": "19:00" }, "AMRL": { "day": "saturday", "time": "16:00" }, "EMRL": { "day": "saturday", "time": "15:10" } },
-    "first_season":      { "UL": 26, "CL": 23, "JL": 23, "AL": 23, "UMRL": 10, "AMRL": 9, "EMRL": 8 },
-    "format":            { "UL": "10", "CL": "10", "JL": "AB", "AL": "AB", "UMRL": "10", "AMRL": "10", "EMRL": "5" },
-    "independent_slots": { "UL": 6, "CL": 6, "JL": 6, "AL": 18, "UMRL": 6, "AMRL": 6, "EMRL": 6 },
-    "from":              { "UMRL": "2026-10-19", "AMRL": "2026-10-19", "EMRL": "2026-10-19" }
+    "race_reminder": { "channel": "000000000000000000", "role": "000000000000000000", "minutes": 5 },
+    "opens": { "day": "wednesday", "time": "18:00", "leagues": [ "UMRL", "AMRL", "EMRL" ] }
+  },
+
+  "leagues": {
+    "UL": {
+      "report": true,
+      "channels": { "contracts": "000000000000000000", "lineup": "000000000000000000", "starters": "000000000000000000", "schedule": "000000000000000000" },
+      "roles": { "manager": "000000000000000000", "driver": "000000000000000000" },
+      "calendar": { "closes": "17:50", "first_season": 26, "format": "10", "independent_slots": 6 },
+      "teams": {
+        "LSA": { "role": "000000000000000000", "color": "#cc180d" },
+        "SCP": { "role": "000000000000000000", "color": "#048f2d" },
+        "ONE": { "role": "000000000000000000", "color": "#000001" },
+        "FLF": { "role": "000000000000000000", "color": "#fa74c6" },
+        "ASX": { "role": "000000000000000000", "color": "#20124d" },
+        "MAY": { "role": "000000000000000000", "color": "#00deff" },
+        "SGP": { "role": "000000000000000000", "color": "#dbbf2f" },
+        "KMP": { "role": "000000000000000000", "color": "#ff0000" },
+        "MZM": { "role": "000000000000000000", "color": "#ff00be" }
+      }
+    },
+    "CL": {
+      "report": true,
+      "channels": { "contracts": "000000000000000000", "lineup": "000000000000000000", "starters": "000000000000000000", "schedule": "000000000000000000" },
+      "roles": { "manager": "000000000000000000", "driver": "000000000000000000" },
+      "calendar": { "closes": "16:10", "first_season": 23, "format": "10", "independent_slots": 6 },
+      "teams": {
+        "VLP": { "role": "000000000000000000", "color": "#0e45a9" },
+        "RGT": { "role": "000000000000000000", "color": "#f0f0f0" },
+        "SWR": { "role": "000000000000000000", "color": "#2383ff" },
+        "CPR": { "role": "000000000000000000", "color": "#adadad" },
+        "ARR": { "role": "000000000000000000", "color": "#006e00" },
+        "ASN": { "role": "000000000000000000", "color": "#9e6bff" },
+        "PRO": { "role": "000000000000000000", "color": "#dbdbcf" },
+        "HKB": { "role": "000000000000000000", "color": "#101ca3" }
+      }
+    },
+    "JL": {
+      "report": true,
+      "channels": { "contracts": "000000000000000000", "lineup": "000000000000000000", "starters": "000000000000000000", "schedule": "000000000000000000" },
+      "roles": { "manager": "000000000000000000", "driver": "000000000000000000" },
+      "calendar": { "closes": "15:15", "first_season": 23, "format": "AB", "independent_slots": 6 },
+      "teams": {
+        "8SR": { "role": "000000000000000000", "color": "#e67e22" },
+        "AJR": { "role": "000000000000000000", "color": "#053D25" },
+        "SPR": { "role": "000000000000000000", "color": "#ff0000" },
+        "TCR": { "role": "000000000000000000", "color": "#008b40" },
+        "DCR": { "role": "000000000000000000", "color": "#6c9eb9" },
+        "ALR": { "role": "000000000000000000", "color": "#9b0003" },
+        "BRR": { "role": "000000000000000000", "color": "#018700" }
+      }
+    },
+    "AL": {
+      "report": true,
+      "channels": { "starters": "000000000000000000", "schedule": "000000000000000000" },
+      "roles": { "driver": "000000000000000000" },
+      "calendar": { "closes": "14:30", "first_season": 23, "format": "AB", "independent_slots": 18 }
+    },
+    "UMRL": {
+      "channels": { "contracts": "000000000000000000", "starters": "000000000000000000" },
+      "roles": { "manager": "000000000000000000", "driver": "000000000000000000", "main": "000000000000000000", "reserve": "000000000000000000" },
+      "calendar": { "closes": { "day": "sunday", "time": "19:00" }, "first_season": 10, "format": "10", "independent_slots": 6, "from": "2026-10-19" },
+      "teams": {
+        "MIN": { "role": "000000000000000000", "color": "#e0bf0a" },
+        "SWR": { "role": "000000000000000000", "color": "#2383ff" },
+        "ERT": { "role": "000000000000000000", "color": "#b22222" },
+        "ONE": { "role": "000000000000000000", "color": "#ffffff" },
+        "AST": { "role": "000000000000000000", "color": "#1f8b4c" },
+        "MPM": { "role": "000000000000000000", "color": "#e67e22" },
+        "AUR": { "role": "000000000000000000", "color": "#d8b957" },
+        "ZIP": { "role": "000000000000000000", "color": "#1f631f" },
+        "MAS": { "role": "000000000000000000", "color": "#00ffff" }
+      }
+    },
+    "AMRL": {
+      "channels": { "contracts": "000000000000000000", "starters": "000000000000000000" },
+      "roles": { "manager": "000000000000000000", "driver": "000000000000000000", "main": "000000000000000000", "reserve": "000000000000000000" },
+      "calendar": { "closes": { "day": "saturday", "time": "16:00" }, "first_season": 9, "format": "10", "independent_slots": 6, "from": "2026-10-19" },
+      "teams": {
+        "MJT": { "role": "000000000000000000", "color": "#ffce0a" },
+        "ERA": { "role": "000000000000000000", "color": "#d3d3d3" },
+        "S25M": { "role": "000000000000000000", "color": "#710080" },
+        "AGP": { "role": "000000000000000000", "color": "#00ff4a" },
+        "MPA": { "role": "000000000000000000", "color": "#e67e22" },
+        "JSK": { "role": "000000000000000000", "color": "#36ffa4" },
+        "M8": { "role": "000000000000000000", "color": "#e27aff" },
+        "HRT": { "role": "000000000000000000", "color": "#5da3ff" }
+      }
+    },
+    "EMRL": {
+      "channels": { "contracts": "000000000000000000", "starters": "000000000000000000" },
+      "roles": { "manager": "000000000000000000", "driver": "000000000000000000", "main": "000000000000000000", "reserve": "000000000000000000" },
+      "calendar": { "closes": { "day": "saturday", "time": "15:10" }, "first_season": 8, "format": "5", "independent_slots": 6, "from": "2026-10-19" },
+      "teams": {
+        "NSMO": { "role": "000000000000000000", "color": "#ffffff" },
+        "DWM": { "role": "000000000000000000", "color": "#fbf71e" },
+        "IQOS": { "role": "000000000000000000", "color": "#3498db" },
+        "AGC": { "role": "000000000000000000", "color": "#eb0000" },
+        "AGP": { "role": "000000000000000000", "color": "#1f539d" },
+        "SKO": { "role": "000000000000000000", "color": "#24fa08" },
+        "SPR": { "role": "000000000000000000", "color": "#ebbe0c" },
+        "KMP": { "role": "000000000000000000", "color": "#840000" }
+      }
+    },
+    "OMRL": {
+      "roles": { "driver": "000000000000000000" }
+    }
   },
 
   "race_checks": [
@@ -96,7 +181,6 @@
     "lobby_name": "Yuji Mocks",
     "car_class": "3805310984",
     "car_class_name": "FeS Retro [Official]",
-    "schedule_channels": { "UL": "000000000000000000", "CL": "000000000000000000", "JL": "000000000000000000", "AL": "000000000000000000" },
     "days": {
       "monday":    { "format": "UL length", "league": "UL", "races": 2 },
       "tuesday":   { "format": "Sprint",    "league": "UL", "laps": 8, "races": 4, "rain": false },

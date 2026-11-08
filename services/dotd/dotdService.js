@@ -1,3 +1,4 @@
+const { readConfig } = require('../core/config');
 const fs = require('fs');
 const path = require('path');
 const {
@@ -17,7 +18,6 @@ const { parseCsv } = require('../results/resultsUpload');
  */
 
 const storeFile = path.join(__dirname, '../../data/dotd.json');
-const configPath = path.join(__dirname, '../../config.json');
 const DURATION_MS = 48 * 60 * 60 * 1000;
 const CHECK_EVERY_MS = 60 * 1000;
 // A message holds 40 components; each driver (section + text + button) takes 3.
@@ -42,7 +42,7 @@ function update(messageId, fn) {
 }
 
 function canStart(interaction) {
-    const servers = JSON.parse(fs.readFileSync(configPath, 'utf-8')).dotd || {};
+    const servers = readConfig().dotd || {};
     const roles = servers[interaction.guildId === process.env.GUILD_ID ? 'main' : interaction.guildId]?.roles || [];
     return Boolean(interaction.member?.roles.cache.some(r => roles.includes(r.id)));
 }

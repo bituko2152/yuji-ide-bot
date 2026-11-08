@@ -19,10 +19,11 @@ if (!fs.existsSync(path.join(__dirname, 'config.json'))) {
     console.error('❌ config.json not found: copy config.example.json to config.json and fill in your server\'s ids.');
     process.exit(1);
 }
+const { readConfig } = require('./services/core/config');
 try {
-    JSON.parse(fs.readFileSync(path.join(__dirname, 'config.json'), 'utf-8'));
+    readConfig();
 } catch (err) {
-    console.error(`❌ config.json is not valid JSON (${err.message}): fix it, or restore it from .config.backup.json.`);
+    console.error(`❌ config.json can't be used: ${err.message}`);
     process.exit(1);
 }
 
@@ -183,8 +184,8 @@ client.once('clientReady', async () => {
     }
 
     // Other servers (e.g. the mobile one) only get the commands listed for
-    // them in config.json "extra_servers": [{ "id", "commands": [...] }].
-    const extraServers = JSON.parse(fs.readFileSync(path.join(__dirname, 'config.json'), 'utf-8')).extra_servers || [];
+    // them in config.json: servers.<name> { "id", "commands": [...] }.
+    const extraServers = readConfig().extra_servers;
     for (const server of extraServers) {
         if (!server.id) continue;
         const body = commandsArray.filter(c => (server.commands || []).includes(c.name));
