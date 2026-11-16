@@ -12,7 +12,9 @@ const { renderReplay } = require('../replay/render');
  * League results: /results listen follows an online lobby and posts each
  * qualifying / race table as a CSV (human drivers only) to config
  * "results.channel", each followed by its replay, until the lobby closes
- * or /results stop.
+ * or /results stop. A session that ends without results (lobby closed,
+ * /results stop, the host restarting it) still gets a provisional CSV from
+ * the laps the bot saw, and its replay.
  *
  * Listening is "hidden": the bot connects to the lobby on the master server
  * but never introduces itself as a player, so it takes no seat and nobody
@@ -82,6 +84,38 @@ function buildCsv(rows, isRace) {
     return [header, ...lines].map(l => l.map(cell).join(',')).join('\n') + '\n';
 }
 
+// A session that never sent its results: the classification from the laps
+// recorded. Race: finishers by time, then most laps, then who completed that
+// lap first. Qualifying: best lap. Same columns as the game's tables (plus laps).
+function partialCsv(recorder, isRace) {
+    const humans = recorder.roster.filter(d => d.id?.includes(':'));
+    const rows = humans.map(d => {
+        const laps = recorder.lapTimes.filter(e => e.car === d.idx + 1 && e.time > 0);
+        const finish = laps.find(e => e.total > 0);
+        const best = laps.length ? Math.min(...laps.map(e => e.time)) : null;
+        return { name: d.name, grid: d.grid, laps: laps.length, best, total: finish?.total || null, lastAt: laps.at(-1)?.at ?? Infinity };
+    }).filter(r => r.laps);
+    if (!rows.length) return null;
+
+    const ms = s => (s == null ? '' : Math.round(s * 1000));
+    const cell = v => (/[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
+    let header, lines;
+    if (isRace) {
+        rows.sort((a, b) => (a.total && b.total ? a.total - b.total : a.total ? -1 : b.total ? 1 : 0)
+            || b.laps - a.laps || a.lastAt - b.lastAt);
+        const winner = rows[0].total;
+        const fastest = Math.min(...rows.map(r => r.best));
+        header = ['position', 'driver', 'grid', 'quali_time_ms', 'race_time_ms', 'gap_ms', 'best_lap_ms', 'fastest_lap', 'dnf', 'laps'];
+        lines = rows.map((r, i) => [i + 1, r.name, r.grid || '', '', ms(r.total), r.total && winner ? ms(r.total - winner) : '',
+            ms(r.best), r.best === fastest, false, r.laps]);
+    } else {
+        rows.sort((a, b) => a.best - b.best);
+        header = ['position', 'driver', 'quali_time_ms', 'gap_ms', 'laps'];
+        lines = rows.map((r, i) => [i + 1, r.name, ms(r.best), i ? ms(r.best - rows[0].best) : 0, r.laps]);
+    }
+    return { csv: [header, ...lines].map(l => l.map(cell).join(',')).join('\n') + '\n', laps: Math.max(...rows.map(r => r.laps)) };
+}
+
 // ---------------------------------------------------------------- listening
 
 const watching = new Map(); // "<host>|<lobbyId>" -> watcher
@@ -96,6 +130,8 @@ function watch(client, lobby, channelId) {
     const posted = new Set();   // signatures of tables already posted (resends)
     const recorder = new RaceRecorder(); // positions, tyres, pits, weather for the replay
     let seq = 0;
+    let lastPosted = null;      // 'qualifying' | 'race': the session that just got its results
+    let sessionDone = false;    // this session's results were posted
 
     const raw = fields => socket.send(Buffer.from(fields.map(f => `${f}\n\0`).join(''), 'utf-8'), PORT, lobby.host);
     const send = (type, target, payload) => {
@@ -116,6 +152,8 @@ function watch(client, lobby, channelId) {
         // settings (*33|1) start a new recording.
         const what = isRace ? 'race' : 'qualifying';
         const replay = takeReplay(what);
+        lastPosted = what;
+        sessionDone = true;
 
         const channel = await client.channels.fetch(channelId).catch(() => null);
         if (!channel) return console.warn(`⚠️ [Results] Channel ${channelId} not found.`);
@@ -139,6 +177,30 @@ function watch(client, lobby, channelId) {
         }
     }
 
+    // The session running now ended without results: post what was recorded.
+    // Which one it is: a race after a qualifying, otherwise a qualifying.
+    async function postPartial(reason) {
+        if (sessionDone || !recorder.settings || tables.size) return;
+        sessionDone = true;
+        const isRace = lastPosted === 'qualifying';
+        const what = isRace ? 'race' : 'qualifying';
+        const partial = partialCsv(recorder, isRace);
+        if (!partial) return;
+        const replay = takeReplay(what); // before any await: a new session resets the recording
+        lastPosted = what;
+        const channel = await client.channels.fetch(channelId).catch(() => null);
+        if (!channel) return;
+        const base = lobby.name.replace(/[^\w-]+/g, '_');
+        const total = isRace && recorder.settings.laps ? `/${recorder.settings.laps}` : '';
+        console.log(`⚠️ [Results] ${lobby.name}: ${what} ended without results (${reason}), provisional CSV after lap ${partial.laps}${total}.`);
+        await channel.send({
+            content: `⚠️ **${lobby.name}**: the ${what} ended without results (${reason}). Provisional classification after lap ${partial.laps}${total}, from the laps the bot saw.`,
+            files: [new AttachmentBuilder(Buffer.from(partial.csv, 'utf-8'), { name: `${base}_${what}_provisional.csv` })]
+        }).catch(err => console.error('❌ [Results]', err.message));
+        const msg = await channel.send(`🎬 Generating the ${what} replay…`).catch(err => console.error('❌ [Results]', err.message));
+        if (msg) await attachReplay(msg, base, what, replay);
+    }
+
     async function attachReplay(msg, base, what, { why, data, error }) {
         try {
             if (error) throw error;
@@ -159,6 +221,12 @@ function watch(client, lobby, channelId) {
         if (m[2] === '1') socket.send(Buffer.from(`ack\n2\n${m[3]}\n\0`, 'latin1'), PORT, lobby.host);
 
         const f = m[1].replace(/\|$/, '').split('|');
+        // A new session (not the copy sent to someone joining): the previous one,
+        // if it never sent results (host restarted it), is posted as it was.
+        if (f[0] === '33' && f[1] === '1' && f[2] !== '1') {
+            postPartial('the session was restarted').catch(err => console.error('❌ [Results]', err.message));
+            sessionDone = false;
+        }
         recorder.onMessage(f, m[2] === '1' ? m[3] : null);
         if (f[0] !== '3' || f[1] !== '2' || f.length < 15) return;
 
@@ -185,7 +253,9 @@ function watch(client, lobby, channelId) {
         send('94', '2', ['*21', myId]);
     }, KEEPALIVE_MS);
 
-    const stop = () => {
+    // reason: posts what the current session has so far (null on shutdown: no time to).
+    const stop = async reason => {
+        if (reason) await postPartial(reason).catch(err => console.error('❌ [Results]', err.message));
         clearInterval(keepAlive);
         for (const t of tables.values()) clearTimeout(t.timer);
         try { raw(['95', lobby.port, myId, '1', String(++seq)]); } catch { /* socket closed */ }
@@ -231,7 +301,7 @@ function listen(client, lobby) {
 function stopListening(key) {
     const w = watching.get(key);
     if (!w) return false;
-    w.stop();
+    w.stop('/results stop');
     return true;
 }
 
@@ -241,7 +311,7 @@ async function tick(client) {
     const live = new Set((await fetchLobbies()).lobbies.map(lobbyKey));
     for (const [key, w] of watching) {
         if (live.has(key)) continue;
-        w.stop();
+        await w.stop('the lobby closed');
         const channel = await client.channels.fetch(w.channelId).catch(() => null);
         await channel?.send(`🔕 **${w.lobby.name}** closed, stopped listening.`).catch(() => { });
     }
@@ -256,4 +326,4 @@ function startResultsLoop(client) {
     setInterval(() => tick(client).catch(err => console.error('❌ [Results] Tick failed:', err.message)), TICK_MS);
 }
 
-module.exports = { startResultsLoop, stopAll, buildCsv, listLobbies, seenLobby, lobbyKey, isWatching, listen, stopListening, watching };
+module.exports = { startResultsLoop, stopAll, buildCsv, partialCsv, listLobbies, seenLobby, lobbyKey, isWatching, listen, stopListening, watching };
