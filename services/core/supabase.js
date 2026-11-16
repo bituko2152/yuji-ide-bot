@@ -5,7 +5,6 @@
  *
  *   select('drivers', 'id,name', { name: 'eq.Bob' })   -> rows
  *   insert('results', [ {...}, {...} ])                -> inserted rows
- *   upsert('penalties', [ {...} ], 'key')               -> insert or update
  *   remove('races', { id: 'eq.12' })
  */
 
@@ -45,14 +44,10 @@ const select = (table, columns = '*', filters = {}) =>
 const insert = (table, rows) =>
     request('POST', table, { body: rows, prefer: 'return=representation' });
 
-// Insert, or update the row with the same `onConflict` column(s).
-const upsert = (table, rows, onConflict) =>
-    request('POST', table, { params: { on_conflict: onConflict }, body: rows, prefer: 'resolution=merge-duplicates,return=representation' });
-
 const remove = (table, filters) =>
     request('DELETE', table, { params: filters });
 
 const update = (table, filters, values) =>
     request('PATCH', table, { params: filters, body: values });
 
-module.exports = { select, insert, upsert, remove, update };
+module.exports = { select, insert, remove, update };
