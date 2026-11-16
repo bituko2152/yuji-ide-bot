@@ -6,6 +6,7 @@ const {
     ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, ModalBuilder,
     StringSelectMenuBuilder, TextInputBuilder, TextInputStyle
 } = require('discord.js');
+const { savePenalty } = require('./penaltyStore');
 const pollStore = require('./pollStore');
 
 /*
@@ -372,6 +373,11 @@ async function handleConfirmButton(interaction) {
         delete p.draft;
     });
     await message.edit({ ...render(updated), allowedMentions: { parse: [] } });
+    await savePenalty({
+        key: `report:${poll.reportId}`, reportId: poll.reportId, resultMessageId: sent.id, replacedMessageId: previous?.id,
+        discordId: r.culpritId, round: r.round, level: updated.submitted.level, ...d, proof: r.proof,
+        stewardId: interaction.user.id, at: Date.now(), rectified: updated.submitted.rectified || 0
+    }).catch(err => console.error(`❌ [Penalties] Report ${poll.reportId} not saved:`, err.message));
     return interaction.update({ content: rectifying ? '✅ Rectification posted.' : '✅ Result submitted.', components: [] });
 }
 

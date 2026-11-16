@@ -485,6 +485,9 @@ async function handleUploadComponent(interaction) {
         await interaction.update({ content: '⏳ Uploading…', components: [] });
         try {
             const count = await save(plan);
+            // Penalties already decided for this round now point to its race.
+            await require('../reports/penaltyStore').linkRace(plan)
+                .catch(err => console.error('❌ [Penalties] Race not linked:', err.message));
             console.log(`📤 [Upload] ${plan.league} S${plan.season}${plan.division || ''} R${plan.round}: ${count} results by ${interaction.user.tag}`);
             return interaction.editReply({ content: `✅ Uploaded **${count}** results to ${plan.league} S${plan.season}${plan.division || ''} R${plan.round}.` });
         } catch (err) {

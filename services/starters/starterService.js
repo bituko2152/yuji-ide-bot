@@ -36,11 +36,10 @@ function isOpen(round) {
     return !!round && round.open && Date.now() < round.closesAt;
 }
 
-// TO of a team = league manager role + that team's role, at the same time.
+// TO of a team: owner / principal in the league's lineup, else league manager
+// role + that team's role (lineupService.runsTeam).
 function isTO(member, teamRoleId, cat, config) {
-    const managerRoleId = config.league_manager_roles?.[cat];
-    if (!managerRoleId || managerRoleId === '???') return false;
-    return member.roles.cache.has(managerRoleId) && member.roles.cache.has(teamRoleId);
+    return require('../lineups/lineupService').runsTeam(member, teamRoleId, cat, config.league_manager_roles?.[cat]);
 }
 
 // Managers (manager_role / manager_users) can remove anyone: any team or Independent.
@@ -64,7 +63,7 @@ async function getTeamOwners(guild, teamRoleId, cat, config) {
 
     const find = () => {
         const role = guild.roles.cache.get(teamRoleId);
-        return role ? [...role.members.filter(m => m.roles.cache.has(managerRoleId)).values()] : [];
+        return role ? [...role.members.filter(m => isTO(m, teamRoleId, cat, config)).values()] : [];
     };
 
     let owners = find();

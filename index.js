@@ -238,6 +238,9 @@ client.once('clientReady', async () => {
 
     // Report messages whose poll was lost from data/polls.json get it back.
     recoverLostPolls(client).catch(err => console.error('❌ [Reports] Poll recovery failed:', err.message));
+
+    // Penalty results Yuji posted before they were saved in the database (once).
+    require('./services/reports/penaltyStore').backfill(client).catch(err => console.error('❌ [Penalties] Backfill failed:', err.message));
 });
 
 // Handle commands and buttons

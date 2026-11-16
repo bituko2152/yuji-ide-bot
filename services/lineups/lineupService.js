@@ -331,6 +331,20 @@ async function releaseDriver(client, cat, userId) {
     await refreshMessage(client, cat);
 }
 
+/**
+ * Whether someone runs a team (owner / principal). With a grid, the grid
+ * decides: an owner of one team who is a reserve of another only runs the
+ * first. Without one (mobile leagues), the roles: team role + league manager role.
+ */
+function runsTeam(member, teamRoleId, cat, managerRoleId) {
+    const team = readAll()[cat]?.teams.find(t => t.roleId === teamRoleId);
+    if (team) {
+        if ([...team.owners, ...team.principals].some(p => p.id === member.id)) return true;
+        if ([...team.drivers, ...team.reserves].some(p => p?.id === member.id)) return false;
+    }
+    return Boolean(managerRoleId && managerRoleId !== '???' && member.roles.cache.has(managerRoleId) && member.roles.cache.has(teamRoleId));
+}
+
 /** Team role ids someone is owner / principal of in a league's grid. */
 function staffTeams(cat, userId) {
     return (readAll()[cat]?.teams || []).filter(t => [...t.owners, ...t.principals].some(p => p.id === userId)).map(t => t.roleId);
@@ -422,6 +436,6 @@ function startLineupLoop(client) {
 }
 
 module.exports = {
-    startLineupLoop, hasFreeSeat, signDriver, releaseDriver, staffTeams, seatTeam,
+    startLineupLoop, hasFreeSeat, signDriver, releaseDriver, staffTeams, seatTeam, runsTeam,
     applyEdit, lineupOfMessage, refreshMessage, messageText, MAX_TEXT, currentSeason, parseLineup, renderLineup, teamOrder
 };
