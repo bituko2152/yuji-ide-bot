@@ -7,7 +7,7 @@
     },
     "mobile": {
       "id": "000000000000000000",
-      "commands": [ "offercontract", "release", "attend", "removeattendance", "setattendance", "message", "Edit message", "dotd", "incidents" ],
+      "commands": [ "offercontract", "release", "attend", "removeattendance", "setattendance", "message", "Edit message", "dotd", "incidents", "report", "share-pov", "start-deadline" ],
       "message_roles": [ "000000000000000000", "000000000000000000", "000000000000000000" ],
       "log_channel": "000000000000000000",
       "dotd_roles": [ "000000000000000000" ],
@@ -156,6 +156,20 @@
     },
     "OMRL": {
       "roles": { "driver": "000000000000000000" }
+    }
+  },
+
+  "mobile_stewards": {
+    "guild": "000000000000000000",
+    "roles": { "steward": "000000000000000000", "head": "000000000000000000" },
+    "decisions_channel": "000000000000000000",
+    "appeals_channel": "000000000000000000",
+    "leagues": {
+      "UMRL":         { "post": "000000000000000000" },
+      "AMRL":         { "post": "000000000000000000" },
+      "EMRL Sprint":  { "league": "EMRL", "post": "000000000000000000" },
+      "EMRL Feature": { "league": "EMRL", "post": "000000000000000000" },
+      "OMRL":         { "post": "000000000000000000" }
     }
   },
 

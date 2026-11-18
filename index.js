@@ -188,7 +188,8 @@ client.once('clientReady', async () => {
     const extraServers = readConfig().extra_servers;
     for (const server of extraServers) {
         if (!server.id) continue;
-        const body = commandsArray.filter(c => (server.commands || []).includes(c.name));
+        const body = commandsArray.filter(c => (server.commands || []).includes(c.name))
+            .map(c => client.commands.get(c.name).dataFor?.(server.id) || c);
         try {
             await rest.put(Routes.applicationGuildCommands(process.env.CLIENT_ID, server.id), { body });
             console.log(`✅ ${body.length} slash command(s) registered in server ${server.id}.`);
@@ -318,6 +319,17 @@ client.on('interactionCreate', async interaction => {
     if ((interaction.isStringSelectMenu() || interaction.isModalSubmit()) && isUploadComponent(interaction.customId)) {
         await handleUploadComponent(interaction).catch(error => {
             console.error('❌ Error handling results upload interaction:', error);
+        });
+
+        return;
+    }
+
+    /*
+     * Handle the mobile stewards' forms and menus (reports, votes)
+     */
+    if ((interaction.isStringSelectMenu() || interaction.isModalSubmit()) && interaction.customId.startsWith('stw:')) {
+        await require('./services/stewards/stewardService').handleComponent(interaction).catch(error => {
+            console.error('❌ Error handling stewards interaction:', error);
         });
 
         return;

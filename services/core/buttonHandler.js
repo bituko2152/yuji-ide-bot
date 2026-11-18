@@ -74,6 +74,10 @@ async function handleButtonInteraction(interaction) {
         await handleContractButton(interaction);
         return true;
     }
+    if (interaction.customId.startsWith('stw:')) {
+        await require('../stewards/stewardService').handleComponent(interaction);
+        return true;
+    }
     if (interaction.customId.startsWith('release_')) {
         await require('../../commands/release').handleReleaseButton(interaction);
         return true;

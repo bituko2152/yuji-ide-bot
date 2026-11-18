@@ -1,11 +1,23 @@
 const { readConfig } = require('../services/core/config');
 const { reportRound } = require('../services/starters/starterCalendar');
 const { SlashCommandBuilder } = require('discord.js');
+const stewards = require('../services/stewards/stewardService');
 const fs = require('fs');
 const path = require('path');
 const { render, createPoll } = require('../services/reports/reportService');
 
+// The mobile server's /report: its leagues, then a form (services/stewards).
+const mobileData = () => new SlashCommandBuilder()
+    .setName('report')
+    .setDescription('Report a race incident to the stewards')
+    .addStringOption(o => o.setName('league').setDescription('League and race').setRequired(true)
+        .addChoices(...Object.keys(readConfig().mobile_stewards?.leagues || {}).map(k => ({ name: k, value: k }))))
+    .addBooleanOption(o => o.setName('intentional_targeting').setDescription('Intentional Targeting: can be reported after the deadline'))
+    .toJSON();
+
 module.exports = {
+    // Registered per server: the mobile one gets its own version.
+    dataFor: guildId => (stewards.isMobile(guildId) ? mobileData() : null),
     data: new SlashCommandBuilder()
         .setName('report')
         .setDescription('Report an incident on the track')
@@ -26,6 +38,7 @@ module.exports = {
             option.setName('description').setDescription('Brief description of what happened').setRequired(true)),
 
     async execute(interaction) {
+        if (stewards.isMobile(interaction.guildId)) return stewards.openReport(interaction);
         const config = readConfig();
 
         const category = interaction.options.getString('category');
