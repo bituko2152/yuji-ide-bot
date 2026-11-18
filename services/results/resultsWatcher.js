@@ -1,6 +1,4 @@
 const { readConfig } = require('../core/config');
-const fs = require('fs');
-const path = require('path');
 const dgram = require('dgram');
 const { AttachmentBuilder } = require('discord.js');
 const { fetchLobbies } = require('../steam/lobbyService');
@@ -12,7 +10,7 @@ const { renderReplay } = require('../replay/render');
  * League results: /results listen follows an online lobby and posts each
  * qualifying / race table as a CSV (human drivers only) to config
  * "results.channel", each followed by its replay, until the lobby closes
- * or /results stop. A session that ends without results (lobby closed,
+ * or /results stop. A race that ends without results (lobby closed,
  * /results stop, the host restarting it) still gets a provisional CSV from
  * the laps the bot saw, and its replay.
  *
@@ -177,13 +175,14 @@ function watch(client, lobby, channelId) {
         }
     }
 
-    // The session running now ended without results: post what was recorded.
-    // Which one it is: a race after a qualifying, otherwise a qualifying.
+    // The race running now ended without results: post what was recorded.
+    // Only a race (the session after a qualifying): the game doesn't say which
+    // session is running, and a practice would look like a qualifying.
     async function postPartial(reason) {
-        if (sessionDone || !recorder.settings || tables.size) return;
+        if (sessionDone || !recorder.settings || tables.size || lastPosted !== 'qualifying') return;
         sessionDone = true;
-        const isRace = lastPosted === 'qualifying';
-        const what = isRace ? 'race' : 'qualifying';
+        const isRace = true;
+        const what = 'race';
         const partial = partialCsv(recorder, isRace);
         if (!partial) return;
         const replay = takeReplay(what); // before any await: a new session resets the recording

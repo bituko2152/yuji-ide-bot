@@ -1,6 +1,5 @@
 const { readConfig } = require('../services/core/config');
 const { SlashCommandBuilder, AttachmentBuilder, MessageFlags } = require('discord.js');
-const fs = require('fs');
 const path = require('path');
 const { Worker } = require('worker_threads');
 

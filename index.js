@@ -172,7 +172,8 @@ client.once('clientReady', async () => {
                 process.env.GUILD_ID
             ),
             {
-                body: commandsArray
+                // Commands only for the other servers (mobile stewards) stay out of this one.
+                body: commandsArray.filter(c => !client.commands.get(c.name).extraServersOnly)
             }
         );
 

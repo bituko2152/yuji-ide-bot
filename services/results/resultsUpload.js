@@ -1,7 +1,5 @@
 const { readConfig } = require('../core/config');
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
-const fs = require('fs');
-const path = require('path');
 const db = require('../core/supabase');
 const starterStore = require('../starters/starterStore');
 
@@ -38,7 +36,7 @@ const CANDIDATES = 22;          // + "create" + "skip" <= 25 options
 
 function parseCsv(text) {
     const rows = [];
-    for (const line of text.replace(/^﻿/, '').split(/\r?\n/)) {
+    for (const line of text.replace(/^\uFEFF/, '').split(/\r?\n/)) {
         if (!line.trim()) continue;
         const cells = [];
         let cur = '', quoted = false;

@@ -1,6 +1,4 @@
 const { readConfig, setReportRounds } = require('../core/config');
-const fs = require('fs');
-const path = require('path');
 const { AttachmentBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
 const starterStore = require('./starterStore');
 const { teamColor } = require('../core/teamColors');

@@ -5,6 +5,7 @@ const stewards = require('../services/stewards/stewardService');
 // Mobile server: once the race footage is out, a steward starts the 48 h
 // countdown that closes reports for a league's latest race.
 module.exports = {
+    extraServersOnly: true,
     data: new SlashCommandBuilder()
         .setName('start-deadline')
         .setDescription('Stewards: footage is out, reports for this league close in 48 h')

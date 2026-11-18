@@ -63,7 +63,9 @@ module.exports = {
         // races for the team whose role they hold, no need to pick it.
         const mainRole = config.seat_roles?.[cat]?.main;
         if (!target && mainRole && member.roles.cache.has(mainRole)) {
-            target = teams.find(t => member.roles.cache.has(t.roleId))?.roleId || null;
+            // The team they drive for: not one they only own (an owner can drive for another team).
+            const held = teams.filter(t => member.roles.cache.has(t.roleId));
+            target = (held.find(t => !S.isTO(member, t.roleId, cat, config)) || held[0])?.roleId || null;
             if (!target) return interaction.editReply(`❌ You're a main driver but have no **${cat}** team role: pick your team in the \`team\` option.`);
         }
         if (!target) {

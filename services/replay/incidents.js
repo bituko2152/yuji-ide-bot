@@ -29,7 +29,7 @@ function parseReplay(html) {
 
 function detectIncidents(D) {
     const HZ = D.hz, F = D.frames, L = D.lapLen, CAR = D.carLen || 34;
-    const cars = D.cars, byId = new Map(cars.map(c => [String(c.id), c]));
+    const cars = D.cars;
     const ok = (c, k) => k >= 0 && k < F && c.x[k] !== NONE16 && c.p[k] !== NONE32;
     const clock = k => { const s = Math.round(k / HZ); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
     const lapOf = (c, k) => (ok(c, k) ? Math.floor(c.p[k] / L) + 1 : '?');

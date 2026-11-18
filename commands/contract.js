@@ -1,7 +1,5 @@
 const { readConfig } = require('../services/core/config');
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
-const fs = require('fs');
-const path = require('path');
 const { randomUUID } = require('crypto');
 const contractStore = require('../services/contracts/contractStore');
 const { teamColor } = require('../services/core/teamColors');

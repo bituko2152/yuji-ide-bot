@@ -2,8 +2,6 @@ const { readConfig } = require('../services/core/config');
 const { reportRound } = require('../services/starters/starterCalendar');
 const { SlashCommandBuilder } = require('discord.js');
 const stewards = require('../services/stewards/stewardService');
-const fs = require('fs');
-const path = require('path');
 const { render, createPoll } = require('../services/reports/reportService');
 
 // The mobile server's /report: its leagues, then a form (services/stewards).

@@ -16,3 +16,6 @@ data/replay-manual/
 
 # Runtime data written by the bot (contracts, polls, lobby message, caches)
 data/
+
+# Claude Code (agents and local settings) stays on this PC
+.claude/

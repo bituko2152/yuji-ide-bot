@@ -159,7 +159,7 @@ function readJson(file) {
 
 // "...Belgium 2\0track:134/..." inside track_info.data -> "Belgium 2"
 function nameFromInfo(buf) {
-    const m = buf?.toString('latin1').match(/([A-Za-z][\w .'()&-]{0,40})\x00track:\d+/);
+    const m = buf?.toString('latin1').match(/([A-Za-z][\w .'()&-]{0,40})\x00track:\d+/); // eslint-disable-line no-control-regex
     return m ? m[1].trim() : null;
 }
 

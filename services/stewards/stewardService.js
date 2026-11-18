@@ -206,12 +206,14 @@ async function submitReport(interaction) {
         votes: {}, status: 'voting'
     };
     // The clip goes up again with the vote message: form uploads expire.
-    const sent = await post.send({
-        embeds: [reportEmbed(report, 'report')],
-        files: files.map(f => ({ attachment: f.url, name: f.name })),
-        components: voteComponents(report, 'report'),
-        allowedMentions: { parse: [] }
-    });
+    const payload = { embeds: [reportEmbed(report, 'report')], components: voteComponents(report, 'report'), allowedMentions: { parse: [] } };
+    // Too big to upload again (Discord's limit): the form's link is kept instead (valid for a while).
+    let sent = await post.send({ ...payload, files: files.map(f => ({ attachment: f.url, name: f.name })) }).catch(() => null);
+    if (!sent) {
+        report.clips.push(...files.map(f => ({ by: interaction.user.id, url: f.url })));
+        sent = await post.send({ ...payload, embeds: [reportEmbed(report, 'report')] }).catch(() => null);
+    }
+    if (!sent) return interaction.editReply('❌ The report couldn\'t be posted for the stewards. Try again, or tell a Head Steward.');
     report.clips.push(...[...sent.attachments.values()].map(a => ({ by: interaction.user.id, url: a.url })));
     report.vote = { channelId: sent.channelId, messageId: sent.id };
     all.reports[id] = report;
@@ -272,13 +274,12 @@ async function sharePov(interaction) {
     const channel = await interaction.client.channels.fetch(where.channelId).catch(() => null);
     const msg = await channel?.messages.fetch(where.messageId).catch(() => null);
     if (!msg) return interaction.editReply('❌ The vote message wasn\'t found.');
-    const pov = await channel.send({
-        content: `🔁 Alternative POV from <@${r.culpritId}> for report #${r.id}${link ? `\n${link}` : ''}`,
-        files: file ? [{ attachment: file.url, name: file.name }] : [],
-        reply: { messageReference: msg.id, failIfNotExists: false },
-        allowedMentions: { parse: [] }
-    });
-    const urls = [...(link ? [link] : []), ...[...pov.attachments.values()].map(a => a.url)];
+    const base = { content: `🔁 Alternative POV from <@${r.culpritId}> for report #${r.id}${link ? `\n${link}` : ''}`,
+        reply: { messageReference: msg.id, failIfNotExists: false }, allowedMentions: { parse: [] } };
+    // A file too big to upload again: its link instead.
+    const pov = await channel.send({ ...base, files: file ? [{ attachment: file.url, name: file.name }] : [] })
+        .catch(() => channel.send({ ...base, content: `${base.content}${file ? `\n${file.url}` : ''}` }));
+    const urls = [...(link ? [link] : []), ...(pov.attachments.size ? [...pov.attachments.values()].map(a => a.url) : file ? [file.url] : [])];
     const updated = update(id, x => x.clips.push(...urls.map(url => ({ by: x.culpritId, url }))));
     await msg.edit({ embeds: [reportEmbed(updated, stage)] }).catch(() => { });
     return interaction.editReply(`✅ Your POV was added to report #${id}.`);

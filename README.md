@@ -14,14 +14,15 @@ which lets the bot read live races and host game lobbies itself, without running
 
 | Area | Feature |
 |---|---|
-| **Race control** | `/report`: incident reports with steward voting, penalty points and a corrected result posted as a reply |
+| **Race control** | `/report`: incident reports with steward voting, penalty points and a corrected result posted as a reply; every decision is saved in Supabase for the website |
+| | **Mobile stewarding** on the mobile server, following its rulebook: `/report` with a form (driver, explanation, clip), `/share-pov` for the reported driver, hidden steward votes, penalties from the escalation tables and season penalty points with bans, published decisions and appeals in private threads |
 | **League admin** | Weekly *starters* board (`/attend`): sign-ups per team, approval from the team owner, team owners setting their lineup (`/setattendance`), opening and closing times per league, rendered as an image |
 | | Driver contracts (`/offercontract`) with automatic role assignment, on two servers; PC leagues announce each signing with a generated banner (driver, number, flag, team logo and car) |
 | | `/release`: drivers leave their team, or a team owner ends a contract by mutual agreement |
 | | **Live lineups**: each PC league's grid is a bot message kept up to date with contracts, ordered by last season's constructors' standings, editable by staff with a format check, and renewed every season (drivers' team roles removed) |
 | | Anonymous weekly attendance check, run on the league calendar so it skips break weeks |
 | **Live races** | Live list of online game lobbies, updated from the game's master servers |
-| | `/results listen`: joins a lobby *invisibly* and posts the qualifying and race classification as CSV |
+| | `/results listen`: joins a lobby *invisibly* and posts the qualifying and race classification as CSV, with a provisional one from the laps recorded if a race is cut short |
 | | **HTML race replays**: a self-contained page with a TV-style timing tower, onboard camera, minimap, weather and pit stops, and best-lap ordering with sector times for qualifying |
 | | `/upload replay`: publishes a replay on the league website |
 | **Practice** | Daily practice lobbies **hosted by the bot itself**: track, laps and weather from the league calendar, then qualifying and races back to back |
@@ -119,7 +120,8 @@ config.example.json Server-specific settings (channels, roles, leagues, schedule
 commands/           One file per slash command, loaded automatically
 services/
   core/             Button router, cleanup, presence, Supabase client
-  reports/          Race reports and steward votes
+  reports/          Race reports, steward votes and penalties saved to Supabase
+  stewards/         Mobile league stewarding (rulebook, votes, decisions, appeals)
   contracts/        Driver contracts and the signing banner
   lineups/          Live league lineups and season change
   starters/         Weekly starters board and league calendar
@@ -129,6 +131,7 @@ services/
   mocks/            Bot-hosted practice lobbies (headless game host)
   steam/            Lobby list, news and sales, leaderboards, profiles
 assets/replay/      Replay page template
+test/               Tests (node --test)
 scripts/            One-off tools (Steam login)
 ```
 
@@ -143,6 +146,8 @@ npm install
 cp .env.example .env    # then fill it in
 npm start
 ```
+
+`npm test` runs the tests (calendar, rulebook, lineup and results parsing) and `npm run lint` the linter; both run on every push (GitHub Actions).
 
 | Variable | Used for |
 |---|---|

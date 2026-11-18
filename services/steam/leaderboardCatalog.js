@@ -1,6 +1,4 @@
 const { readConfig } = require('../core/config');
-const fs = require('fs');
-const path = require('path');
 
 /*
  * Tracks and car classes of Ultimate Racing 2D 2 that /record can show.

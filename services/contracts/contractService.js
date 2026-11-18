@@ -1,6 +1,4 @@
 const { readConfig } = require('../core/config');
-const fs = require('fs');
-const path = require('path');
 const { EmbedBuilder, AttachmentBuilder } = require('discord.js');
 const contractStore = require('./contractStore');
 const { renderContractCard, contractData } = require('./contractCard');

@@ -1,6 +1,4 @@
 const { readConfig } = require('../services/core/config');
-const fs = require('fs');
-const path = require('path');
 const { SlashCommandBuilder } = require('discord.js');
 const R = require('../services/results/resultsWatcher');
 const U = require('../services/results/resultsUpload');

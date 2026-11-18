@@ -3,6 +3,7 @@ const stewards = require('../services/stewards/stewardService');
 
 // Mobile server: the reported driver adds their own clip to a report being voted.
 module.exports = {
+    extraServersOnly: true,
     data: new SlashCommandBuilder()
         .setName('share-pov')
         .setDescription('Add your point of view to a report against you')

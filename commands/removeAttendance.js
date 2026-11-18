@@ -29,6 +29,10 @@ module.exports = {
         const isSelf = target.id === interaction.user.id;
 
         const entry = S.findEntry(round, target.id);
+        if (!entry && isSelf && Object.values(round.requests || {}).some(r => r.userId === target.id)) {
+            await S.cancelPendingRequests(interaction.client, cat, target.id);
+            return interaction.editReply('✅ Your pending request was cancelled.');
+        }
         if (!entry) {
             return interaction.editReply(isSelf
                 ? 'ℹ️ You are not signed up for this round.'

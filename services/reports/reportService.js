@@ -1,7 +1,5 @@
 const { readConfig } = require('../core/config');
 const { reportRound } = require('../starters/starterCalendar');
-const fs = require('fs');
-const path = require('path');
 const {
     ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, ModalBuilder,
     StringSelectMenuBuilder, TextInputBuilder, TextInputStyle
