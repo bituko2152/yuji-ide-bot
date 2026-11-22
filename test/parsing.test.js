@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { parseLineup } = require('../services/lineups/lineupService');
-const { parseRound, parseResult, amounts } = require('../services/reports/penaltyStore');
+const { parseRound, amounts } = require('../services/reports/penaltyStore');
 const { partialCsv, buildCsv } = require('../services/results/resultsWatcher');
 const { parseCsv } = require('../services/results/resultsUpload');
 
@@ -43,12 +43,6 @@ test('penalty rounds and amounts', () => {
     assert.equal(amounts('Position penalty', '2 positions').positions, 2);
     assert.equal(amounts('DSQ', 'DSQ + sent to the URA').dsq, true);
     assert.equal(amounts('Warning', '-').warning, true);
-});
-
-test('a posted penalty result is read back', () => {
-    const r = parseResult('**Report:** <@42> | CL | S23 R1\n**Result:** Level 2 | Time penalty\n**Penalty:** 3.00s\n**Proof:** https://x');
-    assert.deepEqual([r.discordId, r.offense, r.kind, r.penalty, r.proof], ['42', 'Level 2', 'Time penalty', '3.00s', 'https://x']);
-    assert.deepEqual(parseRound(r.round), { league: 'CL', season: 23, division: null, round: 1 });
 });
 
 test('game results table -> CSV (humans only, DNF, fastest lap)', () => {

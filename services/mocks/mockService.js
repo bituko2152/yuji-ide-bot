@@ -1,6 +1,5 @@
+const { dataFile, readJson, writeJson } = require('../core/jsonStore');
 const { readConfig } = require('../core/config');
-const fs = require('fs');
-const path = require('path');
 const { EmbedBuilder } = require('discord.js');
 const { createLobbyHost } = require('./lobbyHost');
 const { roundThisWeek } = require('./leagueSchedule');
@@ -30,16 +29,16 @@ const { roundThisWeek } = require('./leagueSchedule');
 
 const { europe } = require('../core/europeTime');
 
-const storeFile = path.join(__dirname, '../../data/mocks.json');
+const storeFile = dataFile('mocks.json');
 const DAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 const WAIT_FOR_DRIVERS_MS = 10 * 60 * 1000; // nobody in the lobby at the start: wait this long
 const AFTER_QUALI_MS = 15 * 1000;           // qualifying -> race
 const BETWEEN_RACES_MS = 60 * 1000;         // race -> next qualifying
 const CLOSE_AFTER_MS = 2 * 60 * 1000;
 
-const loadConfig = () => readConfig().mocks;
-const readStore = () => { try { return JSON.parse(fs.readFileSync(storeFile, 'utf-8')); } catch { return {}; } };
-const writeStore = data => { fs.mkdirSync(path.dirname(storeFile), { recursive: true }); fs.writeFileSync(storeFile, JSON.stringify(data, null, 2)); };
+const mocksConfig = () => readConfig().mocks;
+const readStore = () => readJson(storeFile);
+const writeStore = data => writeJson(storeFile, data);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 let active = null; // the lobby host while a mock is running
@@ -131,7 +130,7 @@ async function runMock(client, cfg, day, startAt) {
 }
 
 async function tick(client) {
-    const cfg = loadConfig();
+    const cfg = mocksConfig();
     if (!cfg?.channel || active) return;
     const now = new Date();
     const day = cfg.days?.[DAYS[now.getUTCDay()]];

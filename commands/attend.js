@@ -1,4 +1,5 @@
-const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { readConfig } = require('../services/core/config');
+const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
 const { randomUUID } = require('crypto');
 const starterStore = require('../services/starters/starterStore');
 const S = require('../services/starters/starterService');
@@ -18,7 +19,7 @@ module.exports = {
     // Choices depend on the channel the command is typed in: each league's
     // starters channel only lists that league's teams.
     async autocomplete(interaction) {
-        const config = S.loadConfig();
+        const config = readConfig();
         const cat = S.categoryFromChannel(interaction.channelId, config);
         if (!cat) return interaction.respond([]);
 
@@ -32,9 +33,9 @@ module.exports = {
     },
 
     async execute(interaction) {
-        await interaction.deferReply({ ephemeral: true });
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-        const config = S.loadConfig();
+        const config = readConfig();
         const member = interaction.member;
 
         const cat = S.categoryFromChannel(interaction.channelId, config);
@@ -43,7 +44,7 @@ module.exports = {
         }
 
         const playerRoleId = config.league_driver_roles?.[cat];
-        if (!playerRoleId || playerRoleId === '???') {
+        if (!playerRoleId) {
             return interaction.editReply(`❌ The driver role for **${cat}** isn't configured (league_driver_roles in config.json).`);
         }
         if (!member.roles.cache.has(playerRoleId)) {

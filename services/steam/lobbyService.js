@@ -1,6 +1,5 @@
+const { dataFile, readJson, writeJson } = require('../core/jsonStore');
 const { readConfig } = require('../core/config');
-const fs = require('fs');
-const path = require('path');
 const dgram = require('dgram');
 const { EmbedBuilder, MessageFlags, escapeMarkdown } = require('discord.js');
 
@@ -31,33 +30,20 @@ const LIST_REQUEST = Buffer.from('90\n1\n8\n\0', 'latin1');
 const RESPONSE_WAIT_MS = 2500;
 const UPDATE_EVERY_MS = 3 * 60 * 1000; // free hosting caps CPU: don't poll every minute
 
-const storeFile = path.join(__dirname, '../../data/lobbyMessage.json');
+const storeFile = dataFile('lobbyMessage.json');
 const LIST_TITLE = 'Online lobbies';
 const UNKNOWN_MESSAGE = 10008; // Discord: the message no longer exists
 
-function loadConfig() {
-    return readConfig();
-}
-
 // data/lobbyMessage.json: { "<channelId>": "<messageId>" }
-// (old single-channel format { messageId } belonged to the first channel)
-function readMessageIds(channelIds) {
-    try {
-        const data = JSON.parse(fs.readFileSync(storeFile, 'utf-8'));
-        if ('messageId' in data) return data.messageId ? { [channelIds[0]]: data.messageId } : {};
-        return data;
-    } catch {
-        return {};
-    }
-}
+const readMessageIds = () => readJson(storeFile);
 
 function writeMessageIds(ids) {
-    fs.writeFileSync(storeFile, JSON.stringify(ids));
+    writeJson(storeFile, ids);
 }
 
 // lobby_channels: list of channel ids, in any server the bot is in.
 function lobbyChannelIds(config) {
-    return (config.lobby_channels || []).filter(id => id && id !== '???');
+    return (config.lobby_channels || []).filter(Boolean);
 }
 
 // ---------------------------------------------------------------- protocol
@@ -188,7 +174,7 @@ async function removeOtherCopies(channel, keepId) {
 }
 
 async function updateLobbyMessages(client) {
-    const channelIds = lobbyChannelIds(loadConfig());
+    const channelIds = lobbyChannelIds(readConfig());
     if (!channelIds.length) return;
 
     // Query the game once, post the same list everywhere.

@@ -1,4 +1,5 @@
-const { SlashCommandBuilder } = require('discord.js');
+const { readConfig } = require('../services/core/config');
+const { SlashCommandBuilder, MessageFlags } = require('discord.js');
 const starterStore = require('../services/starters/starterStore');
 const S = require('../services/starters/starterService');
 
@@ -23,9 +24,9 @@ module.exports = {
             .setRequired(false)),
 
     async execute(interaction) {
-        await interaction.deferReply({ ephemeral: true });
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-        const config = S.loadConfig();
+        const config = readConfig();
         const cat = S.categoryFromChannel(interaction.channelId, config);
         if (!cat) {
             return interaction.editReply('❌ This command can only be used in a league\'s starters channel.');

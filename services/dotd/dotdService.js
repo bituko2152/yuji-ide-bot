@@ -1,6 +1,5 @@
+const { dataFile, readJson, writeJson } = require('../core/jsonStore');
 const { readConfig } = require('../core/config');
-const fs = require('fs');
-const path = require('path');
 const {
     EmbedBuilder, ButtonBuilder, ButtonStyle, MessageFlags,
     ContainerBuilder, SectionBuilder, TextDisplayBuilder, SeparatorBuilder
@@ -17,7 +16,7 @@ const { parseCsv } = require('../results/resultsUpload');
  * data/dotd.json: { "<messageId>": { channelId, title, closesAt, drivers, votes: { userId: index }, closed } }
  */
 
-const storeFile = path.join(__dirname, '../../data/dotd.json');
+const storeFile = dataFile('dotd.json');
 const DURATION_MS = 48 * 60 * 60 * 1000;
 const CHECK_EVERY_MS = 60 * 1000;
 // A message holds 40 components; each driver (section + text + button) takes 3.
@@ -27,11 +26,10 @@ const COLOR = 0xf1c40f;
 const VOTE = 'dotd_vote_'; // dotd_vote_<driver index>
 
 function readAll() {
-    try { return JSON.parse(fs.readFileSync(storeFile, 'utf-8')); } catch { return {}; }
+    return readJson(storeFile);
 }
 function writeAll(data) {
-    fs.mkdirSync(path.dirname(storeFile), { recursive: true });
-    fs.writeFileSync(storeFile, JSON.stringify(data, null, 2));
+    writeJson(storeFile, data);
 }
 function update(messageId, fn) {
     const all = readAll();

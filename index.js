@@ -1,6 +1,6 @@
 require('dotenv').config();
 
-// Timestamps on every console line, and a copy in data/logs/ (kept 14 days).
+// Timestamps on every console line, and a copy in data/logs/ (kept 30 days).
 require('./services/core/logFile').install();
 
 const {
@@ -8,7 +8,8 @@ const {
     GatewayIntentBits,
     Collection,
     REST,
-    Routes
+    Routes,
+    MessageFlags
 } = require('discord.js');
 
 const fs = require('fs');
@@ -95,7 +96,6 @@ const {
 const {
     handleReportComponent,
     isReportComponent,
-    migrateOldPolls,
     recoverLostPolls
 } = require('./services/reports/reportService');
 
@@ -211,7 +211,7 @@ client.once('clientReady', async () => {
     // Periodic check for accepted contracts pending role grant.
     startContractLoop(client);
 
-    // Daily cleanup: removes polls/contracts older than 15 days from disk.
+    // Daily cleanup: removes polls/contracts older than 30 days from disk.
     startCleanupLoop();
 
     // PC team colors from Supabase, before the starters board is drawn.
@@ -235,14 +235,8 @@ client.once('clientReady', async () => {
     // League lineup messages: kept up to date with contracts, new one each season.
     startLineupLoop(client);
 
-    // Reports of the current rounds still on the old poll -> S26 penalty system.
-    migrateOldPolls(client).catch(err => console.error('❌ [Reports] Poll migration failed:', err.message));
-
     // Report messages whose poll was lost from data/polls.json get it back.
     recoverLostPolls(client).catch(err => console.error('❌ [Reports] Poll recovery failed:', err.message));
-
-    // Penalty results Yuji posted before they were saved in the database (once).
-    require('./services/reports/penaltyStore').backfill(client).catch(err => console.error('❌ [Penalties] Backfill failed:', err.message));
 });
 
 // Handle commands and buttons
@@ -295,7 +289,7 @@ client.on('interactionCreate', async interaction => {
                 await interaction.reply({
                     content:
                         '❌ There was an error processing this button.',
-                    ephemeral: true
+                    flags: MessageFlags.Ephemeral
                 }).catch(() => { });
             }
         }
@@ -374,13 +368,13 @@ client.on('interactionCreate', async interaction => {
             await interaction.followUp({
                 content:
                     '❌ There was an error executing this command.',
-                ephemeral: true
+                flags: MessageFlags.Ephemeral
             }).catch(() => { });
         } else {
             await interaction.reply({
                 content:
                     '❌ There was an error executing this command.',
-                ephemeral: true
+                flags: MessageFlags.Ephemeral
             }).catch(() => { });
         }
     }

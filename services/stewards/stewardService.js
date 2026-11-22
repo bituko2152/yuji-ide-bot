@@ -1,5 +1,4 @@
-const fs = require('fs');
-const path = require('path');
+const { dataFile, readJson, writeJson } = require('../core/jsonStore');
 const {
     ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, StringSelectMenuBuilder, ModalBuilder,
     LabelBuilder, UserSelectMenuBuilder, TextInputBuilder, TextInputStyle, FileUploadBuilder, MessageFlags, ChannelType
@@ -34,7 +33,7 @@ const { INFRACTIONS, CHOICES, PPTS_TABLES, choice, penaltyFor, bansReached } = r
  * State in data/stewards.json.
  */
 
-const storeFile = path.join(__dirname, '../../data/stewards.json');
+const storeFile = dataFile('stewards.json');
 const DAY_MS = 24 * 60 * 60 * 1000;
 const APPEAL_MS = DAY_MS;
 const REPORT_WINDOW_MS = 48 * 60 * 60 * 1000; // reports close 48 h after /start-deadline (once the footage is out)
@@ -43,11 +42,10 @@ const ID = 'stw:';
 // ---------------------------------------------------------------- store
 
 function readAll() {
-    try { return { reports: {}, appeals: {}, next: 1, ...JSON.parse(fs.readFileSync(storeFile, 'utf-8')) }; }
-    catch { return { reports: {}, appeals: {}, next: 1 }; }
+    return { reports: {}, appeals: {}, next: 1, ...readJson(storeFile) };
 }
 function writeAll(data) {
-    fs.writeFileSync(storeFile, JSON.stringify(data, null, 2));
+    writeJson(storeFile, data);
 }
 function update(id, fn) {
     const all = readAll();
@@ -240,8 +238,13 @@ async function openWindow(interaction) {
     const league = leagueOf(key);
     const race = league && lastRace(league);
     if (!race) return interaction.reply(ephemeral(`❌ There's no **${key}** race yet.`));
-    const deadline = Date.now() + REPORT_WINDOW_MS;
     const all = readAll();
+    // Once started, the countdown of a race can't be restarted.
+    const open = all.windows?.[key];
+    if (open?.round === race.round && open.season === race.season) {
+        return interaction.reply(ephemeral(`❌ The **${key} ${race.round}** countdown is already running: reports close <t:${Math.floor(open.deadline / 1000)}:R>.`));
+    }
+    const deadline = Date.now() + REPORT_WINDOW_MS;
     all.windows = { ...(all.windows || {}), [key]: { round: race.round, season: race.season, openedAt: Date.now(), deadline, by: interaction.user.id } };
     writeAll(all);
     console.log(`🚓 [Stewards] Reports for ${key} ${race.round} close ${new Date(deadline).toISOString()} (${interaction.user.tag}).`);
@@ -427,6 +430,14 @@ async function publish(interaction) {
     if (!isSteward(interaction.member)) return interaction.reply(ephemeral('❌ Only League Stewards publish decisions.'));
     const r = readAll().reports[id];
     if (!r?.result || r.publishedAt) return interaction.reply(ephemeral('⚠️ Already published.'));
+    // Decisions go out only once reports for that race are closed.
+    const win = readAll().windows?.[r.key];
+    const sameRace = win?.round === r.round && win.season === r.season;
+    if (sameRace ? Date.now() < win.deadline : !win || win.openedAt < r.createdAt) {
+        return interaction.reply(ephemeral(sameRace
+            ? `⏳ Reports for **${r.key} ${r.round}** close <t:${Math.floor(win.deadline / 1000)}:R>: publish after that.`
+            : `⏳ The **${r.key} ${r.round}** countdown hasn't started (\`/start-deadline\`): publish once reports are closed.`));
+    }
     await interaction.deferUpdate();
     const before = seasonPoints(r.culpritId, r.season, PPTS_TABLES[r.base]);
     update(id, x => { x.publishedAt = Date.now(); x.publishedBy = interaction.user.id; x.status = 'published'; });

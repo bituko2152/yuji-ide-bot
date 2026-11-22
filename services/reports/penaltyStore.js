@@ -1,7 +1,4 @@
-const fs = require('fs');
-const path = require('path');
 const db = require('../core/supabase');
-const { readConfig } = require('../core/config');
 
 /*
  * Every penalty result Yuji posts is kept in Supabase "penalties", one row per
@@ -9,12 +6,7 @@ const { readConfig } = require('../core/config');
  * never changed: time_ms / positions / dsq / dnf are applied (warning: nothing)
  * wherever the classification is computed. race_id is set once that round's
  * results are uploaded (/results upload).
- *
- * The first time, the whole results channel is read so the results Yuji
- * posted before are saved too (data/penaltiesBackfill.json marks it done).
  */
-
-const doneFile = path.join(__dirname, '../../data/penaltiesBackfill.json');
 
 // "JLS22AR1" / "JL S22A R1" -> { league, season, division, round }
 function parseRound(text) {
@@ -95,52 +87,4 @@ async function linkRace({ league, season, division, round }) {
     await db.update('penalties', { season_id: `eq.${seasonId}`, round: `eq.${round}`, race_id: 'is.null' }, { race_id: raceId });
 }
 
-// ---------------------------------------------------------------- results already posted
-
-// "**Report:** <@1> | UL | S26 | R5\n**Result:** Level 2 | Time penalty\n**Penalty:** 3.00s\n**Proof:** …"
-function parseResult(text) {
-    const report = text.match(/\*\*Report:\*\*\s*<@!?(\d+)>\s*\|\s*(.+)/);
-    const result = text.match(/\*\*Result:\*\*\s*(.+?)\s*\|\s*(.+)/);
-    const penalty = text.match(/\*\*Penalty:\*\*\s*(.+)/);
-    if (!report || !result || !penalty) return null;
-    return {
-        discordId: report[1],
-        round: report[2].replace(/\|/g, ''),
-        offense: result[1].trim(),
-        kind: result[2].trim(),
-        penalty: penalty[1].trim(),
-        proof: text.match(/\*\*Proof:\*\*\s*(.+)/)?.[1].trim() || null,
-        reportId: text.match(/Report #(\S+?)\*\*/)?.[1] || null
-    };
-}
-
-async function backfill(client) {
-    if (fs.existsSync(doneFile)) return;
-    const channelId = readConfig().report_results_channel;
-    const channel = channelId && await client.channels.fetch(channelId).catch(() => null);
-    if (!channel) return console.warn('⚠️ [Penalties] Results channel not found: nothing saved from it.');
-
-    // Oldest first, so a rectification comes after the result it corrects.
-    const messages = [];
-    for (let before; ;) {
-        const page = await channel.messages.fetch({ limit: 100, ...(before ? { before } : {}) });
-        if (!page.size) break;
-        messages.push(...page.values());
-        before = page.lastKey();
-    }
-    messages.reverse();
-
-    let saved = 0;
-    for (const m of messages) {
-        if (m.author.id !== client.user.id) continue;
-        const r = parseResult(m.embeds[0]?.description || '');
-        if (!r) continue;
-        // A rectification replies to the result it corrects: same row.
-        await savePenalty({ ...r, resultMessageId: m.id, replacedMessageId: m.reference?.messageId, at: m.createdTimestamp })
-            .then(() => saved++, err => console.error(`❌ [Penalties] ${m.url}:`, err.message));
-    }
-    fs.writeFileSync(doneFile, JSON.stringify({ at: Date.now(), saved }));
-    console.log(`✅ [Penalties] ${saved} result(s) posted before saved from the results channel.`);
-}
-
-module.exports = { savePenalty, linkRace, backfill, parseRound, parseResult, amounts };
+module.exports = { savePenalty, linkRace, parseRound, amounts };

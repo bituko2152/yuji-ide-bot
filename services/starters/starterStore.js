@@ -1,7 +1,6 @@
-const fs = require('fs');
-const path = require('path');
+const { dataFile, readJson, writeJson } = require('../core/jsonStore');
 
-const storeFile = path.join(__dirname, '../../data/starters.json');
+const storeFile = dataFile('starters.json');
 
 /*
  * Shape of data/starters.json — ONE entry per category, overwritten every
@@ -19,12 +18,11 @@ const storeFile = path.join(__dirname, '../../data/starters.json');
  */
 
 function readAll() {
-    try { return JSON.parse(fs.readFileSync(storeFile, 'utf-8')); }
-    catch { return {}; }
+    return readJson(storeFile);
 }
 
 function writeAll(data) {
-    fs.writeFileSync(storeFile, JSON.stringify(data, null, 2));
+    writeJson(storeFile, data);
 }
 
 function getRound(cat) {

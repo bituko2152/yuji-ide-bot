@@ -1,6 +1,5 @@
+const { dataFile, readJson, writeJson } = require('../core/jsonStore');
 const { readConfig } = require('../core/config');
-const fs = require('fs');
-const path = require('path');
 const { EmbedBuilder } = require('discord.js');
 
 /*
@@ -28,24 +27,12 @@ const CHECK_EVERY_MS = 10 * 60 * 1000;
 const REMEMBER = 50;
 const CLAN_IMAGE_BASE = 'https://clan.akamai.steamstatic.com/images/';
 
-const storeFile = path.join(__dirname, '../../data/steamNews.json');
+const storeFile = dataFile('steamNews.json');
 
-function loadConfig() {
-    return readConfig();
-}
-
-function readStore() {
-    try {
-        const store = JSON.parse(fs.readFileSync(storeFile, 'utf-8'));
-        // Old single-game format ({ seen: [...] }) belonged to Ultimate Racing 2D 2.
-        return Array.isArray(store.seen) ? { 1285230: { seen: store.seen } } : store;
-    } catch {
-        return {};
-    }
-}
+const readStore = () => readJson(storeFile);
 
 function writeStore(store) {
-    fs.writeFileSync(storeFile, JSON.stringify(store));
+    writeJson(storeFile, store);
 }
 
 // ---------------------------------------------------------------- Steam
@@ -149,7 +136,7 @@ function buildSaleEmbed(game, usd, eur, image) {
 // A discount is announced when it starts; if its % changes the message is
 // updated, and when it ends the message is deleted (known.saleMsg tracks it).
 async function checkSale(client, game, store) {
-    if (!game.channel || game.channel === '???') return;
+    if (!game.channel) return;
 
     const usd = await fetchPrice(game.appid, 'us');
     // No price at all (unreleased, or Steam answered without data): don't treat
@@ -203,7 +190,7 @@ async function checkSale(client, game, store) {
 // ---------------------------------------------------------------- loop
 
 async function checkGame(client, game, store) {
-    if (!game.channel || game.channel === '???') return;
+    if (!game.channel) return;
 
     const news = await fetchNews(game.appid);
     const known = store[game.appid];
@@ -234,7 +221,7 @@ async function checkGame(client, game, store) {
 }
 
 async function checkNews(client) {
-    const games = loadConfig().steam_news || [];
+    const games = readConfig().steam_news || [];
     const store = readStore();
     for (const game of games) {
         // One game failing (Steam hiccup, missing channel...) doesn't block the others.

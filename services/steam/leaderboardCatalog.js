@@ -95,12 +95,12 @@ function normalize(list) {
     return Object.fromEntries(Object.entries(list || {}).map(([id, name]) => [id, name || null]));
 }
 
-// records.channels (or the older records.channel): channel id(s) where
+// records.channels: channel id(s) where
 // /record works, as one id or a list. Empty/"???" = anywhere.
 function recordsChannels() {
     try {
         const r = readConfig().records || {};
-        return [r.channels ?? [], r.channel ?? []].flat().filter(id => id && id !== '???');
+        return [r.channels ?? []].flat().filter(Boolean);
     } catch {
         return [];
     }

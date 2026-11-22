@@ -7,14 +7,10 @@ const lineups = require('../lineups/lineupService');
 
 const CHECK_INTERVAL_MS = 5 * 60 * 1000; // 5 min is plenty of resolution for a 24h window
 
-function loadConfig() {
-    return readConfig();
-}
-
 // The PC leagues' announcement: "@driver moves from X to Y as a Main Driver" and the banner.
 // Throws if anything fails: the caller then posts the plain message instead.
-// "Main Driver" (contracts offered before the rename still say "Main Seat").
-const seatName = contract => (contract.seatLabel ? contract.seatLabel.replace(/ Seat$/, ' Driver') : 'Driver');
+// "Main Driver" / "Reserve Driver".
+const seatName = contract => contract.seatLabel || 'Driver';
 
 async function announceWithCard(channel, member, contract, fromShort) {
     const { card, teamName, fromName } = await contractData({
@@ -48,7 +44,7 @@ async function grantContract(client, contract) {
     // Remove any other team role they held before, WITHIN THE SAME LEAGUE
     // only — someone competing in two leagues at once (e.g. UL and HL)
     // must keep their team role in the other league untouched.
-    const config = loadConfig();
+    const config = readConfig();
     const sameLeagueTeamRoleIds = Object.entries(config.team_roles)
         .filter(([, info]) => info.league === contract.categoria)
         .map(([roleId]) => roleId);

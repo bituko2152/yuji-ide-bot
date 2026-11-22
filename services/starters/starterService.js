@@ -9,10 +9,6 @@ const TICK_MS = 60 * 1000;     // 1 min is plenty to catch the start of the week
 const TEAM_SLOTS = 2;
 const BOARD_DEBOUNCE_MS = 1500;
 
-function loadConfig() {
-    return readConfig();
-}
-
 // ---------------------------------------------------------------- helpers
 
 function categoryFromChannel(channelId, config) {
@@ -45,11 +41,11 @@ function isTO(member, teamRoleId, cat, config) {
 function canManage(member, config) {
     const s = config.starters || {};
     if ((s.manager_users || []).includes(member.id)) return true;
-    return [].concat(s.manager_role || []).some(id => id !== '???' && member.roles.cache.has(id));
+    return [].concat(s.manager_role || []).some(id => id && member.roles.cache.has(id));
 }
 
 function targetLabel(target, config) {
-    return target === 'independent' ? 'Independent' : (config.team_roles[target]?.name ?? '???');
+    return target === 'independent' ? 'Independent' : (config.team_roles[target]?.name ?? 'Unknown team');
 }
 
 const MEMBERS_FETCH_COOLDOWN_MS = 10 * 60 * 1000;
@@ -57,7 +53,7 @@ const lastMembersFetch = new Map();
 
 async function getTeamOwners(guild, teamRoleId, cat, config) {
     const managerRoleId = config.league_manager_roles?.[cat];
-    if (!managerRoleId || managerRoleId === '???') return [];
+    if (!managerRoleId) return [];
 
     const find = () => {
         const role = guild.roles.cache.get(teamRoleId);
@@ -125,7 +121,7 @@ function removeUser(cat, userId) {
 
 function leagueRoleMention(cat, config) {
     const id = config.league_driver_roles?.[cat];
-    return id && id !== '???' ? `<@&${id}>` : '';
+    return id ? `<@&${id}>` : '';
 }
 
 function buildContent(round, closed, mention = '') {
@@ -157,7 +153,7 @@ async function updateBoard(client, cat, { closed = false } = {}) {
     const channel = await client.channels.fetch(round.channelId).catch(() => null);
     const message = await channel?.messages.fetch(round.messageId).catch(() => null);
 
-    const config = loadConfig();
+    const config = readConfig();
     const isPingMessage = round.messageId === round.pingMessageId;
     const mention = closed || !isPingMessage ? '' : leagueRoleMention(cat, config);
     const payload = {
@@ -228,17 +224,17 @@ async function cancelPendingRequests(client, cat, userId) {
 async function handleStarterButton(interaction) {
     // starter_accept_<cat>_<reqId> / starter_decline_<cat>_<reqId>
     const [, action, cat, reqId] = interaction.customId.split('_');
-    const config = loadConfig();
+    const config = readConfig();
     const round = starterStore.getRound(cat);
     const req = round?.requests?.[reqId];
 
     if (!req || !isOpen(round)) {
-        return interaction.reply({ content: '⚠️ This request is no longer available.', ephemeral: true });
+        return interaction.reply({ content: '⚠️ This request is no longer available.', flags: MessageFlags.Ephemeral });
     }
 
     const teamName = targetLabel(req.teamRoleId, config);
     if (!isTO(interaction.member, req.teamRoleId, cat, config)) {
-        return interaction.reply({ content: `❌ Only a team owner of **${teamName}** can answer this request.`, ephemeral: true });
+        return interaction.reply({ content: `❌ Only a team owner of **${teamName}** can answer this request.`, flags: MessageFlags.Ephemeral });
     }
 
     if (action === 'decline') {
@@ -261,7 +257,7 @@ async function handleStarterButton(interaction) {
         }
 
         starterStore.updateRound(cat, r => { delete r.requests[reqId]; });
-        await interaction.reply({ content: `✅ <@${req.userId}> added to **${teamName}**.`, ephemeral: true });
+        await interaction.reply({ content: `✅ <@${req.userId}> added to **${teamName}**.`, flags: MessageFlags.Ephemeral });
         // Once accepted, the request message is removed.
         await interaction.message.delete().catch(() => { });
         requestBoardUpdate(interaction.client, cat);
@@ -288,7 +284,7 @@ async function openRound(client, cat, win, config) {
 
     // Send first, persist after: if sending fails, the next tick retries.
     const roleId = config.league_driver_roles?.[cat];
-    const hasRole = roleId && roleId !== '???';
+    const hasRole = Boolean(roleId);
     const message = await channel.send({
         content: buildContent(round, false, leagueRoleMention(cat, config)),
         files: [buildBoardFile(cat, round, config)],
@@ -345,7 +341,7 @@ async function syncReports(client, config) {
         setReportRounds(justRaced);
 
         const channelId = config.report_announcements_channel;
-        if (!channelId || channelId === '???') {
+        if (!channelId) {
             console.warn('⚠️ [Reports] report_announcements_channel not configured: rounds updated, no announcement sent.');
         } else {
             const channel = await client.channels.fetch(channelId).catch(() => null);
@@ -360,7 +356,7 @@ async function syncReports(client, config) {
                 // leagues' roles are in league_driver_roles too, but belong to another server).
                 const roleIds = Object.keys(config.report_leagues || {})
                     .map(cat => config.league_driver_roles?.[cat])
-                    .filter(id => id && id !== '???');
+                    .filter(Boolean);
                 await channel.send({
                     content: roleIds.map(id => `<@&${id}>`).join(' ') || undefined,
                     embeds: [embed],
@@ -410,12 +406,12 @@ async function tick(client) {
     if (running) return;
     running = true;
     try {
-        const config = loadConfig();
+        const config = readConfig();
         if (!config.starters) return;
 
         for (const cat of Object.keys(config.starters.channels)) {
             const channelId = config.starters.channels[cat];
-            if (!channelId || channelId === '???') {
+            if (!channelId) {
                 if (!warned.has(cat)) {
                     console.warn(`⚠️ [Starters] No starters channel configured for ${cat}, skipping it.`);
                     warned.add(cat);
@@ -470,7 +466,6 @@ function startStarterLoop(client) {
 module.exports = {
     startStarterLoop,
     handleStarterButton,
-    loadConfig,
     categoryFromChannel,
     teamsOf,
     isOpen,

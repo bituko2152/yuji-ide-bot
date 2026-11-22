@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, EmbedBuilder, escapeMarkdown } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, escapeMarkdown, MessageFlags } = require('discord.js');
 const lb = require('../services/steam/steamLeaderboards');
 const catalog = require('../services/steam/leaderboardCatalog');
 const { fetchPersonaNames, profileUrl } = require('../services/steam/steamProfiles');
@@ -44,7 +44,7 @@ module.exports = {
         const allowed = catalog.recordsChannels();
         if (allowed.length && !allowed.includes(interaction.channelId)) {
             const list = allowed.map(id => `<#${id}>`).join(', ');
-            return interaction.reply({ content: `❌ This command can only be used in ${list}.`, ephemeral: true });
+            return interaction.reply({ content: `❌ This command can only be used in ${list}.`, flags: MessageFlags.Ephemeral });
         }
 
         await interaction.deferReply();

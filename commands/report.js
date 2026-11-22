@@ -1,6 +1,6 @@
 const { readConfig } = require('../services/core/config');
 const { reportRound } = require('../services/starters/starterCalendar');
-const { SlashCommandBuilder } = require('discord.js');
+const { SlashCommandBuilder, MessageFlags } = require('discord.js');
 const stewards = require('../services/stewards/stewardService');
 const { render, createPoll } = require('../services/reports/reportService');
 
@@ -45,7 +45,7 @@ module.exports = {
         if (!categorySettings || categorySettings.active === false) {
             return interaction.reply({
                 content: `❌ Submissions for category **${category}** are currently closed or unconfigured.`,
-                ephemeral: true
+                flags: MessageFlags.Ephemeral
             });
         }
 
@@ -57,10 +57,10 @@ module.exports = {
 
         const reportsChannel = interaction.guild.channels.cache.get(config.reports_channel);
         if (!reportsChannel) {
-            return interaction.reply({ content: '❌ The reports channel is not properly configured in the system.', ephemeral: true });
+            return interaction.reply({ content: '❌ The reports channel is not properly configured in the system.', flags: MessageFlags.Ephemeral });
         }
 
-        await interaction.deferReply({ ephemeral: true });
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
         const reportId = Math.floor(1000 + Math.random() * 9000);
 

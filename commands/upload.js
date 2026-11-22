@@ -1,5 +1,5 @@
 const { readConfig } = require('../services/core/config');
-const { SlashCommandBuilder } = require('discord.js');
+const { SlashCommandBuilder, MessageFlags } = require('discord.js');
 
 /*
  * /upload replay: puts a replay on the website (Replays tab), by hand.
@@ -87,27 +87,27 @@ module.exports = {
         const cfg = resultsConfig();
         if (interaction.channelId !== cfg.channel) {
             const where = cfg.channel ? `<#${cfg.channel}>` : 'the results channel (config "results.channel" is not set)';
-            return interaction.reply({ content: `❌ This command can only be used in ${where}.`, ephemeral: true });
+            return interaction.reply({ content: `❌ This command can only be used in ${where}.`, flags: MessageFlags.Ephemeral });
         }
         if (!(cfg.upload_roles || []).some(id => interaction.member.roles.cache.has(id))) {
-            return interaction.reply({ content: '❌ You are not allowed to use this command.', ephemeral: true });
+            return interaction.reply({ content: '❌ You are not allowed to use this command.', flags: MessageFlags.Ephemeral });
         }
         if (!process.env.REPLAYS_UPLOAD_KEY) {
-            return interaction.reply({ content: '❌ The website password is not set on the bot (.env `REPLAYS_UPLOAD_KEY`).', ephemeral: true });
+            return interaction.reply({ content: '❌ The website password is not set on the bot (.env `REPLAYS_UPLOAD_KEY`).', flags: MessageFlags.Ephemeral });
         }
 
         const session = interaction.options.getString('session');
         const league = interaction.options.getString('league');
         const division = interaction.options.getString('division');
         const needsDivision = DIVISION_LEAGUES.includes(league);
-        if (needsDivision && !division) return interaction.reply({ content: `❌ ${league} seasons are split in A/B: set \`division\`.`, ephemeral: true });
-        if (!needsDivision && division) return interaction.reply({ content: `❌ ${league} has no divisions: leave \`division\` empty.`, ephemeral: true });
+        if (needsDivision && !division) return interaction.reply({ content: `❌ ${league} seasons are split in A/B: set \`division\`.`, flags: MessageFlags.Ephemeral });
+        if (!needsDivision && division) return interaction.reply({ content: `❌ ${league} has no divisions: leave \`division\` empty.`, flags: MessageFlags.Ephemeral });
 
         const twoPart = (cfg.q2_leagues || Q2_LEAGUES).includes(league);
-        if (session === 'quali2' && !twoPart) return interaction.reply({ content: `❌ ${league} has no Q2.`, ephemeral: true });
+        if (session === 'quali2' && !twoPart) return interaction.reply({ content: `❌ ${league} has no Q2.`, flags: MessageFlags.Ephemeral });
 
         const target = replayPath(league, interaction.options.getInteger('season'), division, interaction.options.getInteger('round'), session);
-        await interaction.deferReply({ ephemeral: true });
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         try {
             const { attachment, where } = await findReplay(interaction, session, twoPart);
             const res = await fetch(attachment.url);

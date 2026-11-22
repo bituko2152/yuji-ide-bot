@@ -3,7 +3,8 @@ const dgram = require('dgram');
 const { AttachmentBuilder } = require('discord.js');
 const { fetchLobbies } = require('../steam/lobbyService');
 const { RaceRecorder } = require('../replay/recorder');
-const { buildReplayData } = require('../replay/builder');
+const path = require('path');
+const { Worker } = require('worker_threads');
 const { renderReplay } = require('../replay/render');
 
 /*
@@ -34,10 +35,6 @@ const NO_TIME = 1e6;                // the game's "no time" values are >= 1,000,
 // Session numbers in the results messages. Anything else (practice) is ignored.
 const SESSIONS = { 2: 'qualifying', 3: 'race' };
 
-function loadConfig() {
-    return readConfig();
-}
-
 
 // ---------------------------------------------------------------- results
 
@@ -64,10 +61,13 @@ function buildCsv(rows, isRace) {
 
     let header, lines;
     if (!isRace) {
+        humans.sort((a, b) => a.quali - b.quali);
         const pole = humans[0]?.quali;
         header = ['position', 'driver', 'quali_time_ms', 'gap_ms'];
         lines = humans.map((r, i) => [i + 1, r.name, ms(r.quali), i ? ms(r.quali - pole) : 0]);
     } else {
+        // The game's row order is sometimes wrong: finishers by race time, then the DNFs in the game's order.
+        humans.sort((a, b) => (a.total < NO_TIME && b.total < NO_TIME ? a.total - b.total : (a.total >= NO_TIME) - (b.total >= NO_TIME)));
         const finishers = humans.filter(r => r.total < NO_TIME);
         const winner = finishers[0]?.total;
         // Fastest lap among ALL drivers: a DNF can hold it too (league rule).
@@ -114,6 +114,23 @@ function partialCsv(recorder, isRace) {
     return { csv: [header, ...lines].map(l => l.map(cell).join(',')).join('\n') + '\n', laps: Math.max(...rows.map(r => r.laps)) };
 }
 
+// The replay data, built on its own thread (see replay/builderWorker.js). The
+// recording is copied when the worker starts, so a new session can begin meanwhile.
+function buildInWorker(recorder, qualifying) {
+    const rec = {
+        settings: recorder.settings, tracks: recorder.tracks, roster: recorder.roster, cars: recorder.cars,
+        tyres: recorder.tyres, sectors: recorder.sectors, lapTimes: recorder.lapTimes, gauge: recorder.gauge,
+        forecast: recorder.forecast, track: recorder.track, hasRace: recorder.hasRace
+    };
+    return new Promise((resolve, reject) => {
+        const worker = new Worker(path.join(__dirname, '../replay/builderWorker.js'), { workerData: { rec, qualifying } });
+        worker.once('message', m => (m.error ? reject(new Error(m.error)) : resolve(m.data)));
+        worker.once('error', reject);
+        // Stopped without answering (e.g. out of memory): not left waiting forever.
+        worker.once('exit', code => reject(new Error(`the replay worker stopped (code ${code})`)));
+    });
+}
+
 // ---------------------------------------------------------------- listening
 
 const watching = new Map(); // "<host>|<lobbyId>" -> watcher
@@ -150,6 +167,9 @@ function watch(client, lobby, channelId) {
         // settings (*33|1) start a new recording.
         const what = isRace ? 'race' : 'qualifying';
         const replay = takeReplay(what);
+        // If nothing posts it (channel gone), a build error isn't left unhandled;
+        // when it's posted, attachReplay still reports the error.
+        replay.data?.catch?.(() => { });
         lastPosted = what;
         sessionDone = true;
 
@@ -169,7 +189,7 @@ function watch(client, lobby, channelId) {
         try {
             console.log(`🎬 [Replay] ${lobby.name} (${what}): ${recorder.summary()}`);
             const why = recorder.whyNoReplay();
-            return { why, data: why ? null : buildReplayData(recorder, { qualifying: what === 'qualifying' }) };
+            return { why, data: why ? null : buildInWorker(recorder, what === 'qualifying') };
         } catch (error) {
             return { error };
         }
@@ -186,6 +206,7 @@ function watch(client, lobby, channelId) {
         const partial = partialCsv(recorder, isRace);
         if (!partial) return;
         const replay = takeReplay(what); // before any await: a new session resets the recording
+        replay.data?.catch?.(() => { });
         lastPosted = what;
         const channel = await client.channels.fetch(channelId).catch(() => null);
         if (!channel) return;
@@ -200,9 +221,10 @@ function watch(client, lobby, channelId) {
         if (msg) await attachReplay(msg, base, what, replay);
     }
 
-    async function attachReplay(msg, base, what, { why, data, error }) {
+    async function attachReplay(msg, base, what, { why, data: building, error }) {
         try {
             if (error) throw error;
+            const data = await building;
             if (!data) return void await msg.edit({ content: `⚠️ No replay: ${why || 'couldn\'t find a full lap in the recording.'}` });
             const { html, trackName } = await renderReplay(data, { lobbyName: lobby.name });
             const plain = trackName.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w-]+/g, '_');
@@ -292,7 +314,7 @@ function isWatching(key) {
 }
 
 function listen(client, lobby) {
-    const channelId = loadConfig().results?.channel;
+    const channelId = readConfig().results?.channel;
     if (!channelId) throw new Error('Results channel not set (config "results.channel").');
     if (!watching.has(lobbyKey(lobby))) watch(client, lobby, channelId);
 }

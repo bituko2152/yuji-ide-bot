@@ -1,4 +1,4 @@
-const { EmbedBuilder } = require('discord.js');
+const { EmbedBuilder, MessageFlags } = require('discord.js');
 const contractStore = require('../contracts/contractStore');
 const { handleReportComponent, isReportComponent } = require('../reports/reportService');
 const { handleStarterButton } = require('../starters/starterService');
@@ -13,13 +13,13 @@ async function handleContractButton(interaction) {
     const contract = contractStore.getContract(contractId);
 
     if (!contract) {
-        return interaction.reply({ content: "⚠️ This offer no longer exists or is too old.", ephemeral: true });
+        return interaction.reply({ content: "⚠️ This offer no longer exists or is too old.", flags: MessageFlags.Ephemeral });
     }
     if (interaction.user.id !== contract.toUserId) {
-        return interaction.reply({ content: '❌ This offer is not for you.', ephemeral: true });
+        return interaction.reply({ content: '❌ This offer is not for you.', flags: MessageFlags.Ephemeral });
     }
     if (contract.status !== 'pending') {
-        return interaction.reply({ content: `⚠️ This offer was already **${contract.status}**.`, ephemeral: true });
+        return interaction.reply({ content: `⚠️ This offer was already **${contract.status}**.`, flags: MessageFlags.Ephemeral });
     }
 
     const originalEmbed = interaction.message.embeds[0];
@@ -41,7 +41,7 @@ async function handleContractButton(interaction) {
         const { waitingFor } = require('../../commands/contract');
         const { hasFreeSeat } = require('../lineups/lineupService');
         if (!hasFreeSeat(contract.categoria, contract.teamRoleId, contract.seatType, waitingFor(contract.categoria, contract.teamRoleId, contract.seatType))) {
-            return interaction.reply({ content: '❌ That seat was filled in the meantime: the team has to /release someone first.', ephemeral: true });
+            return interaction.reply({ content: '❌ That seat was filled in the meantime: the team has to /release someone first.', flags: MessageFlags.Ephemeral });
         }
         const now = Date.now();
         const grantAt = now + TWENTY_FOUR_HOURS_MS;

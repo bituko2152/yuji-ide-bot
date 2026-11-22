@@ -1,5 +1,5 @@
 const { readConfig } = require('../services/core/config');
-const { SlashCommandBuilder } = require('discord.js');
+const { SlashCommandBuilder, MessageFlags } = require('discord.js');
 const R = require('../services/results/resultsWatcher');
 const U = require('../services/results/resultsUpload');
 
@@ -20,13 +20,13 @@ async function upload(interaction, cfg) {
     const division = interaction.options.getString('division');
     const needsDivision = (cfg.division_leagues || DEFAULT_DIVISION_LEAGUES).includes(league);
     if (needsDivision && !division) {
-        return interaction.reply({ content: `❌ ${league} seasons are split in A/B: set the \`division\` option.`, ephemeral: true });
+        return interaction.reply({ content: `❌ ${league} seasons are split in A/B: set the \`division\` option.`, flags: MessageFlags.Ephemeral });
     }
     if (!needsDivision && division) {
-        return interaction.reply({ content: `❌ ${league} has no divisions: leave \`division\` empty.`, ephemeral: true });
+        return interaction.reply({ content: `❌ ${league} has no divisions: leave \`division\` empty.`, flags: MessageFlags.Ephemeral });
     }
 
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     try {
         const plan = await U.createPlan({
             userId: interaction.user.id,
@@ -100,13 +100,13 @@ module.exports = {
         const cfg = resultsConfig();
         if (interaction.channelId !== cfg.channel) {
             const where = cfg.channel ? `<#${cfg.channel}>` : 'the results channel (config "results.channel" is not set)';
-            return interaction.reply({ content: `❌ This command can only be used in ${where}.`, ephemeral: true });
+            return interaction.reply({ content: `❌ This command can only be used in ${where}.`, flags: MessageFlags.Ephemeral });
         }
 
         const isUpload = interaction.options.getSubcommand() === 'upload';
         const roles = (isUpload ? cfg.upload_roles : cfg.allowed_roles) || [];
         if (!roles.some(id => interaction.member.roles.cache.has(id))) {
-            return interaction.reply({ content: '❌ You are not allowed to use this command.', ephemeral: true });
+            return interaction.reply({ content: '❌ You are not allowed to use this command.', flags: MessageFlags.Ephemeral });
         }
         if (isUpload) return upload(interaction, cfg);
 
@@ -115,20 +115,20 @@ module.exports = {
         if (interaction.options.getSubcommand() === 'stop') {
             const name = R.watching.get(key)?.lobby.name;
             if (!R.stopListening(key)) {
-                return interaction.reply({ content: '⚠️ Not listening to that lobby.', ephemeral: true });
+                return interaction.reply({ content: '⚠️ Not listening to that lobby.', flags: MessageFlags.Ephemeral });
             }
             // Public, so everyone in the channel knows the capture ended.
             return interaction.reply(`🔕 ${interaction.user} stopped listening to **${name}**.`);
         }
 
         const lobby = R.seenLobby(key);
-        if (!lobby) return interaction.reply({ content: '❌ Pick the lobby from the suggestions list.', ephemeral: true });
-        if (R.isWatching(key)) return interaction.reply({ content: `👂 Already listening to **${lobby.name}**.`, ephemeral: true });
+        if (!lobby) return interaction.reply({ content: '❌ Pick the lobby from the suggestions list.', flags: MessageFlags.Ephemeral });
+        if (R.isWatching(key)) return interaction.reply({ content: `👂 Already listening to **${lobby.name}**.`, flags: MessageFlags.Ephemeral });
 
         try {
             R.listen(interaction.client, lobby);
         } catch (err) {
-            return interaction.reply({ content: `❌ ${err.message}`, ephemeral: true });
+            return interaction.reply({ content: `❌ ${err.message}`, flags: MessageFlags.Ephemeral });
         }
         // Public, so everyone in the channel knows a capture is running.
         return interaction.reply(`👂 ${interaction.user} started listening to **${lobby.name}**. ` +

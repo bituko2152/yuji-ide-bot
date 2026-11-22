@@ -1,5 +1,5 @@
 const { readConfig } = require('../services/core/config');
-const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
 const { randomUUID } = require('crypto');
 const contractStore = require('../services/contracts/contractStore');
 const { teamColor } = require('../services/core/teamColors');
@@ -9,10 +9,6 @@ const lineups = require('../services/lineups/lineupService');
 const waitingFor = (categoria, teamRoleId, seatType) => Object.values(contractStore.allContracts())
     .filter(c => c.status === 'accepted' && !c.granted && c.categoria === categoria && c.teamRoleId === teamRoleId && c.seatType === seatType)
     .map(c => c.toUserId);
-
-function loadConfig() {
-    return readConfig();
-}
 
 /**
  * Returns the list of team roles (from config.team_roles) that this
@@ -38,14 +34,14 @@ module.exports = {
             )),
 
     async execute(interaction) {
-        const config = loadConfig();
+        const config = readConfig();
         const member = interaction.member;
         const target = interaction.options.getUser('driver');
         const seatType = interaction.options.getString('seat'); // 'main' | 'reserve' — cosmetic only
         const seatLabel = seatType === 'main' ? 'Main Driver' : 'Reserve Driver';
 
         if (target.bot) {
-            return interaction.reply({ content: '❌ You cannot offer a contract to a bot.', ephemeral: true });
+            return interaction.reply({ content: '❌ You cannot offer a contract to a bot.', flags: MessageFlags.Ephemeral });
         }
 
         // The league is determined by the CHANNEL the command is run in,
@@ -57,7 +53,7 @@ module.exports = {
         if (!categoria) {
             return interaction.reply({
                 content: '❌ This command can only be used in your league\'s designated channel. Use /offercontract in the right channel.',
-                ephemeral: true
+                flags: MessageFlags.Ephemeral
             });
         }
 
@@ -65,7 +61,7 @@ module.exports = {
         if (managedTeams.length === 0) {
             return interaction.reply({
                 content: '❌ You don\'t have any team manager role configured, so you can\'t offer contracts.',
-                ephemeral: true
+                flags: MessageFlags.Ephemeral
             });
         }
 
@@ -81,13 +77,13 @@ module.exports = {
         if (teamsInThisLeague.length === 0) {
             return interaction.reply({
                 content: `❌ None of your teams belong to the **${categoria}** league, so you can't offer here.`,
-                ephemeral: true
+                flags: MessageFlags.Ephemeral
             });
         }
         if (teamsInThisLeague.length > 1) {
             return interaction.reply({
                 content: `⚠️ You have several teams in the **${categoria}** league (${teamsInThisLeague.map(t => t.name).join(', ')}). Contact an admin to fix this configuration before offering.`,
-                ephemeral: true
+                flags: MessageFlags.Ephemeral
             });
         }
 
@@ -97,25 +93,25 @@ module.exports = {
         if (ligaManagerRoleId && !member.roles.cache.has(ligaManagerRoleId)) {
             return interaction.reply({
                 content: `❌ Your team role belongs to the **${categoria}** category, but you don't have the manager role for that league.`,
-                ephemeral: true
+                flags: MessageFlags.Ephemeral
             });
         }
 
         const ligaJugadorRoleId = config.league_driver_roles?.[categoria];
-        if (!ligaJugadorRoleId || ligaJugadorRoleId === '???') {
+        if (!ligaJugadorRoleId) {
             return interaction.reply({
                 content: `❌ The player role for the **${categoria}** category isn't configured (leagues.${categoria}.roles.driver in config.json).`,
-                ephemeral: true
+                flags: MessageFlags.Ephemeral
             });
         }
 
         const targetMember = await interaction.guild.members.fetch(target.id).catch(() => null);
         if (!targetMember) {
-            return interaction.reply({ content: '❌ Could not find that member in the server.', ephemeral: true });
+            return interaction.reply({ content: '❌ Could not find that member in the server.', flags: MessageFlags.Ephemeral });
         }
 
         if (!lineups.hasFreeSeat(categoria, team.roleId, seatType, waitingFor(categoria, team.roleId, seatType))) {
-            return interaction.reply({ content: `❌ The ${seatLabel.toLowerCase()} seat is full or there are no free seats at **${team.name}**: use /release first.`, ephemeral: true });
+            return interaction.reply({ content: `❌ The ${seatLabel.toLowerCase()} seat is full or there are no free seats at **${team.name}**: use /release first.`, flags: MessageFlags.Ephemeral });
         }
 
         const contractId = randomUUID();
@@ -164,6 +160,6 @@ module.exports = {
             granted: false
         });
 
-        return interaction.reply({ content: `✅ ${seatLabel} offer sent to ${target} for **${team.name}**.`, ephemeral: true });
+        return interaction.reply({ content: `✅ ${seatLabel} offer sent to ${target} for **${team.name}**.`, flags: MessageFlags.Ephemeral });
     }
 };

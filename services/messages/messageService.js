@@ -1,6 +1,5 @@
+const { dataFile, readJson, writeJson } = require('../core/jsonStore');
 const { readConfig } = require('../core/config');
-const fs = require('fs');
-const path = require('path');
 const lineups = require('../lineups/lineupService');
 const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, MessageFlags } = require('discord.js');
 
@@ -13,20 +12,19 @@ const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder, Messag
  * images can be attached; "@Role name" / "@user" typed in the form ping.
  */
 
-const storeFile = path.join(__dirname, '../../data/messages.json');
+const storeFile = dataFile('messages.json');
 const NEW_ID = 'msg:new';
 const EDIT_ID = 'msg:edit:';
 const MAX = 2000;
 
 function readAll() {
-    try { return JSON.parse(fs.readFileSync(storeFile, 'utf-8')); }
-    catch { return {}; }
+    return readJson(storeFile);
 }
 
 function remember(messageId, data) {
     const all = readAll();
     all[messageId] = data;
-    fs.writeFileSync(storeFile, JSON.stringify(all, null, 2));
+    writeJson(storeFile, all);
 }
 
 function serverSettings(guildId) {

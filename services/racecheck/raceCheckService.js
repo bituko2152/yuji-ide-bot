@@ -1,7 +1,6 @@
+const { dataFile, readJson, writeJson } = require('../core/jsonStore');
 const { readConfig } = require('../core/config');
-const fs = require('fs');
-const path = require('path');
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
 const { getWindow } = require('../starters/starterCalendar');
 
 /*
@@ -35,19 +34,17 @@ const { getWindow } = require('../starters/starterCalendar');
 
 const { europe } = require('../core/europeTime');
 
-const storeFile = path.join(__dirname, '../../data/racechecks.json');
+const storeFile = dataFile('racechecks.json');
 const CHECK_EVERY_MS = 60 * 1000;
 const DAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 
-const loadConfig = () => readConfig();
-const checksConfig = () => (loadConfig().race_checks || []).filter(c => c.name && c.channel);
+const checksConfig = () => (readConfig().race_checks || []).filter(c => c.name && c.channel);
 
 function readAll() {
-    try { return JSON.parse(fs.readFileSync(storeFile, 'utf-8')); } catch { return {}; }
+    return readJson(storeFile);
 }
 function writeAll(data) {
-    fs.mkdirSync(path.dirname(storeFile), { recursive: true });
-    fs.writeFileSync(storeFile, JSON.stringify(data, null, 2));
+    writeJson(storeFile, data);
 }
 function update(name, fn) {
     const all = readAll();
@@ -120,7 +117,7 @@ function participantsView(cfg, rc) {
             .setDescription((main + (reserve ? `\n\n**Reserve**\n${reserve}` : '')).slice(0, 4000))
             .setFooter({ text: rc.open ? 'Open' : 'Closed' })],
         allowedMentions: { parse: [] },
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
     };
 }
 
@@ -147,7 +144,7 @@ async function open(client, cfg, weekKey, closesAt, round) {
 
 async function tick(client) {
     const now = new Date();
-    const config = loadConfig();
+    const config = readConfig();
     for (const cfg of checksConfig()) {
         try {
             const publishAt = weekMoment(now, cfg.open);
@@ -185,27 +182,27 @@ async function handleRaceCheckButton(interaction) {
     const cfg = checksConfig().find(c => c.name === name);
     const rc = readAll()[name];
     if (!cfg || !rc || rc.messageId !== interaction.message.id) {
-        return interaction.reply({ content: '⚠️ This race check is no longer active.', ephemeral: true });
+        return interaction.reply({ content: '⚠️ This race check is no longer active.', flags: MessageFlags.Ephemeral });
     }
     const roles = interaction.member?.roles?.cache;
 
     if (action === 'list') {
         const isUro = (cfg.uro_roles || []).some(id => roles?.has(id))
             || interaction.memberPermissions?.has(PermissionFlagsBits.Administrator);
-        if (!isUro) return interaction.reply({ content: '❌ Only UROs can see the participants.', ephemeral: true });
+        if (!isUro) return interaction.reply({ content: '❌ Only UROs can see the participants.', flags: MessageFlags.Ephemeral });
         return interaction.reply(participantsView(cfg, rc));
     }
 
-    if (!rc.open || Date.now() >= rc.closesAt) return interaction.reply({ content: '🔒 This race check is closed.', ephemeral: true });
+    if (!rc.open || Date.now() >= rc.closesAt) return interaction.reply({ content: '🔒 This race check is closed.', flags: MessageFlags.Ephemeral });
     const userId = interaction.user.id;
     const isIn = rc.drivers.some(d => d.userId === userId);
     if (action === 'join') {
         if (cfg.driver_role && !roles?.has(cfg.driver_role)) {
-            return interaction.reply({ content: `❌ Only <@&${cfg.driver_role}> drivers can join.`, ephemeral: true, allowedMentions: { parse: [] } });
+            return interaction.reply({ content: `❌ Only <@&${cfg.driver_role}> drivers can join.`, flags: MessageFlags.Ephemeral, allowedMentions: { parse: [] } });
         }
-        if (isIn) return interaction.reply({ content: "✅ You're already in.", ephemeral: true });
+        if (isIn) return interaction.reply({ content: "✅ You're already in.", flags: MessageFlags.Ephemeral });
     }
-    if (action === 'leave' && !isIn) return interaction.reply({ content: "ℹ️ You weren't in the list.", ephemeral: true });
+    if (action === 'leave' && !isIn) return interaction.reply({ content: "ℹ️ You weren't in the list.", flags: MessageFlags.Ephemeral });
 
     const updated = update(name, r => {
         if (action === 'join') r.drivers.push({ userId, name: interaction.member?.displayName || interaction.user.username, at: Date.now() });
@@ -219,7 +216,7 @@ async function handleRaceCheckButton(interaction) {
         content: action === 'leave' ? `👋 You left the ${name} race check.`
             : reserve ? `🟡 The ${cfg.limit} spots are taken: you're **reserve #${pos - cfg.limit}**. If someone leaves, you move up.`
             : `✅ You're in for ${name}. You can leave until it closes.`,
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
     });
 }
 

@@ -1,5 +1,5 @@
 const { readConfig } = require('../core/config');
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, MessageFlags } = require('discord.js');
 const db = require('../core/supabase');
 const starterStore = require('../starters/starterStore');
 
@@ -227,17 +227,13 @@ const pendingAll = plan => [...unresolved(plan), ...plan.rows.filter(r => r.reso
 
 const INDEPENDENT = { id: null, label: 'Independent' };
 
-function loadConfig() {
-    return readConfig();
-}
-
 /*
  * The league's teams (team role -> DB team) and that round's starters.
  * starters.json only keeps the current week: if it's another round, the
  * starters aren't used and every team is asked.
  */
 function loadStarters({ league, season, round, division, teams, teamAliases }) {
-    const config = loadConfig();
+    const config = readConfig();
     const code = league.toUpperCase();
     // A code that matches more than one team (e.g. SPR: Sparta / Spark) is
     // treated as missing rather than guessed.
@@ -429,7 +425,7 @@ async function handleUploadComponent(interaction) {
     const [, action, planId, position] = interaction.customId.split('_');
     const plan = plans.get(planId);
     if (!plan) return interaction.update({ content: '⌛ This upload expired. Run `/results upload` again.', embeds: [], components: [] });
-    if (interaction.user.id !== plan.userId) return interaction.reply({ content: '❌ This upload is not yours.', ephemeral: true });
+    if (interaction.user.id !== plan.userId) return interaction.reply({ content: '❌ This upload is not yours.', flags: MessageFlags.Ephemeral });
 
     if (action === 'cancel') {
         plans.delete(planId);
@@ -452,7 +448,7 @@ async function handleUploadComponent(interaction) {
             || plan.drivers.find(d => d.id === plan.aliases.find(a => norm(a.alias) === n)?.driver_id);
         if (!hit) {
             const close = plan.drivers.map(d => ({ d, s: similarity(typed, d.name) })).sort((a, b) => b.s - a.s).slice(0, 5).map(x => `**${x.d.name}**`);
-            return interaction.reply({ content: `❌ No driver called "${typed}". Closest: ${close.join(', ')}.\nType one of them, or pick "Create new driver" in the dropdown.`, ephemeral: true });
+            return interaction.reply({ content: `❌ No driver called "${typed}". Closest: ${close.join(', ')}.\nType one of them, or pick "Create new driver" in the dropdown.`, flags: MessageFlags.Ephemeral });
         }
         row.resolution = norm(row.name) === norm(hit.name) ? 'known' : 'alias';
         row.driverId = hit.id;

@@ -1,15 +1,13 @@
-const fs = require('fs');
-const path = require('path');
+const { dataFile, readJson, writeJson } = require('../core/jsonStore');
 
-const storeFile = path.join(__dirname, '../../data/polls.json');
+const storeFile = dataFile('polls.json');
 
 function readAll() {
-    try { return JSON.parse(fs.readFileSync(storeFile, 'utf-8')); }
-    catch { return {}; }
+    return readJson(storeFile);
 }
 
 function writeAll(data) {
-    fs.writeFileSync(storeFile, JSON.stringify(data, null, 2));
+    writeJson(storeFile, data);
 }
 
 /**
@@ -22,9 +20,6 @@ function createPoll(messageId, data) {
     all[messageId] = {
         reportId: data.reportId,
         threadId: data.threadId || null,
-        votes: { A: 0, B: 0, C: 0, D: 0, E: 0, F: 0, G: 0 },
-        baseVotes: {},   // userId -> 'A' | 'B'
-        levelVotes: {},  // userId -> 'C'..'G'
         ...data.overrides
     };
     writeAll(all);

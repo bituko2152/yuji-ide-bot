@@ -11,14 +11,13 @@ const { teamColor } = require('../services/core/teamColors');
  * in the lineup and it's announced here.
  */
 
-const loadConfig = () => readConfig();
 const leagueOf = (config, channelId) => Object.entries(config.league_channels || {}).find(([, id]) => id === channelId)?.[0];
 const teamsIn = (config, member, cat) => Object.entries(config.team_roles)
     .filter(([roleId, t]) => t.league === cat && member.roles.cache.has(roleId))
     .map(([roleId, t]) => ({ roleId, ...t }));
 
 async function release(guild, channel, cat, team, member, endedBy) {
-    const config = loadConfig();
+    const config = readConfig();
     const seatRoles = Object.values(config.seat_roles?.[cat] || {}).filter(id => id && member.roles.cache.has(id));
     await member.roles.remove([team.roleId, ...seatRoles]);
     await lineups.releaseDriver(guild.client, cat, member.id).catch(err => console.error('❌ [Lineups] Release not shown:', err.message));
@@ -40,7 +39,7 @@ async function handleReleaseButton(interaction) {
     if (interaction.user.id !== driverId) {
         return interaction.reply({ content: '❌ This is not for you.', flags: MessageFlags.Ephemeral });
     }
-    const config = loadConfig();
+    const config = readConfig();
     const team = { roleId: teamRoleId, ...config.team_roles[teamRoleId] };
     const embed = EmbedBuilder.from(interaction.message.embeds[0]);
     if (action === 'decline') {
@@ -62,7 +61,7 @@ module.exports = {
         .addUserOption(o => o.setName('driver').setDescription('Team owners: the driver whose contract ends (they must agree)')),
 
     async execute(interaction) {
-        const config = loadConfig();
+        const config = readConfig();
         const cat = leagueOf(config, interaction.channelId);
         if (!cat) {
             return interaction.reply({ content: '❌ Use /release in your league\'s contracts channel.', flags: MessageFlags.Ephemeral });

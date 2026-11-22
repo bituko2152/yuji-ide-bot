@@ -1,6 +1,5 @@
+const { dataFile, readJson, writeJson } = require('../core/jsonStore');
 const { readConfig } = require('../core/config');
-const fs = require('fs');
-const path = require('path');
 const { TextDisplayBuilder, MessageFlags } = require('discord.js');
 const { select } = require('../core/supabase');
 const { mondayUtc, weekStartAt, WEEK_MS } = require('../starters/starterCalendar');
@@ -26,22 +25,20 @@ const { mondayUtc, weekStartAt, WEEK_MS } = require('../starters/starterCalendar
  * lose the team role (owners and principals keep it).
  */
 
-const storeFile = path.join(__dirname, '../../data/lineups.json');
+const storeFile = dataFile('lineups.json');
 const VACANT = '[VACANT]';
 const WHITE_FLAG = '🏳️';
 const MAIN_SEATS = 2;
 const RESERVE_SEATS = 1;
 const CHECK_MS = 15 * 60 * 1000;
 const MAX_TEXT = 4000; // a text display holds 4000 characters, a plain message only 2000
-const VERSION = 2; // a grid stored by an older version is read again from the channel
 const NUMBERS = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
 
-const loadConfig = () => readConfig();
 function readAll() {
-    try { return JSON.parse(fs.readFileSync(storeFile, 'utf-8')); } catch { return {}; }
+    return readJson(storeFile);
 }
 function writeAll(all) {
-    fs.writeFileSync(storeFile, JSON.stringify(all, null, 2));
+    writeJson(storeFile, all);
 }
 const lineupLeagues = config => Object.keys(config.lineups || {});
 
@@ -152,7 +149,7 @@ async function teamNames(shorts) {
 }
 
 async function renderLineup(lineup) {
-    const config = loadConfig();
+    const config = readConfig();
     const all = lineup.teams.flatMap(t => [...t.owners, ...t.principals, ...t.drivers, ...t.reserves]).filter(p => p?.id);
     const flags = await supabaseFlags([...new Set(all.map(p => p.id))]);
     const short = t => config.team_roles[t.roleId]?.name;
@@ -174,7 +171,7 @@ async function renderLineup(lineup) {
 // ---------------------------------------------------------------- Discord
 
 async function channelOf(client, cat) {
-    const id = loadConfig().lineups?.[cat];
+    const id = readConfig().lineups?.[cat];
     return id ? client.channels.fetch(id).catch(() => null) : null;
 }
 
@@ -184,7 +181,7 @@ async function channelOf(client, cat) {
  * Returns team role ids.
  */
 async function teamOrder(cat, seasonKey) {
-    const config = loadConfig();
+    const config = readConfig();
     const [, n, half] = seasonKey.match(/^S(\d+)([AB])?$/);
     const prev = half === 'B' ? { number: +n, division: 'A' } : { number: +n - 1, division: half ? 'B' : null };
     const filters = { league: `eq.${cat}`, number: `eq.${prev.number}`, order: 'standing.asc' };
@@ -210,7 +207,7 @@ const emptyTeam = roleId => ({ roleId, flag: null, owners: [], principals: [], d
 
 // The teams are the league's ones in config team_roles, in the season's order.
 function syncTeams(cat, lineup) {
-    const config = loadConfig();
+    const config = readConfig();
     const ids = Object.entries(config.team_roles).filter(([, t]) => t.league === cat).map(([id]) => id);
     const order = lineup.order || [];
     const pos = id => (order.includes(id) ? order.indexOf(id) : order.length + ids.indexOf(id));
@@ -223,7 +220,7 @@ const staffElsewhere = (lineup, team, id) => lineup.teams.some(t => t !== team &
 // Owners also from roles: holds the team role and the league manager role.
 async function syncOwners(client, cat, lineup) {
     syncTeams(cat, lineup);
-    const config = loadConfig();
+    const config = readConfig();
     const managerRole = config.league_manager_roles?.[cat];
     const channel = await channelOf(client, cat);
     if (!channel || !managerRole) return;
@@ -251,11 +248,9 @@ async function refreshMessage(client, cat) {
     const channel = await channelOf(client, cat);
     const message = channel && lineup.messageId && await channel.messages.fetch(lineup.messageId).catch(() => null);
     const text = await renderLineup(lineup);
-    if (message?.flags.has(MessageFlags.IsComponentsV2)) {
+    if (message) {
         if (messageText(message) !== text) await message.edit(payload(text));
     } else if (channel) {
-        // A plain message from an older version can't hold a long grid: replaced.
-        if (message) await message.delete().catch(() => { });
         await postMessage(channel, cat, lineup, text);
     }
 }
@@ -342,7 +337,7 @@ function runsTeam(member, teamRoleId, cat, managerRoleId) {
         if ([...team.owners, ...team.principals].some(p => p.id === member.id)) return true;
         if ([...team.drivers, ...team.reserves].some(p => p?.id === member.id)) return false;
     }
-    return Boolean(managerRoleId && managerRoleId !== '???' && member.roles.cache.has(managerRoleId) && member.roles.cache.has(teamRoleId));
+    return Boolean(managerRoleId && member.roles.cache.has(managerRoleId) && member.roles.cache.has(teamRoleId));
 }
 
 /** Team role ids someone is owner / principal of in a league's grid. */
@@ -373,23 +368,18 @@ function applyEdit(messageId, text) {
 
 // ---------------------------------------------------------------- start / new season
 
-// No grid yet (or one read by an older version): the newest lineup message
-// people posted in the channel becomes Yuji's own (his message is reused).
-async function importLineup(client, cat) {
+// No grid stored (a league just added, or data/lineups.json lost): an empty one
+// for the current season, teams from the config and owners from their roles;
+// staff fill in the drivers with Edit message.
+async function startLineup(client, cat) {
     const channel = await channelOf(client, cat);
     if (!channel) return console.warn(`⚠️ [Lineups] ${cat}: lineup channel not found.`);
-    const messages = await channel.messages.fetch({ limit: 30 }).catch(() => null);
-    const old = messages && [...messages.values()].find(m => !m.author.bot && /\bSeason\s/i.test(m.content.split('\n')[0]) && /<@&\d+>/.test(m.content));
-    let parsed;
-    try { parsed = old ? parseLineup(old.content) : null; } catch (err) {
-        return console.error(`❌ [Lineups] ${cat}: last lineup message not understood (${err.message}).`);
-    }
-    if (!parsed) return console.warn(`⚠️ [Lineups] ${cat}: no lineup message to start from.`);
-    const season = currentSeason(cat, loadConfig());
-    const lineup = { version: VERSION, season: season.key, title: parsed.title, teams: parsed.teams, order: await teamOrder(cat, season.key), messageId: readAll()[cat]?.messageId || null };
+    const season = currentSeason(cat, readConfig());
+    const lineup = { season: season.key, title: season.title, teams: [], order: await teamOrder(cat, season.key), messageId: null };
     writeAll({ ...readAll(), [cat]: lineup });
-    await refreshMessage(client, cat);
-    console.log(`✅ [Lineups] ${cat}: started from the message of ${old.author.tag}.`);
+    await syncOwners(client, cat, lineup);
+    await postMessage(channel, cat, lineup, await renderLineup(lineup));
+    console.log(`✅ [Lineups] ${cat}: new grid posted for ${season.title}.`);
 }
 
 async function newSeason(client, cat, season) {
@@ -408,7 +398,7 @@ async function newSeason(client, cat, season) {
         team.drivers = Array(MAIN_SEATS).fill(null);
         team.reserves = Array(RESERVE_SEATS).fill(null);
     }
-    const next = { ...lineup, version: VERSION, season: season.key, title: season.title, order: await teamOrder(cat, season.key), messageId: null };
+    const next = { ...lineup, season: season.key, title: season.title, order: await teamOrder(cat, season.key), messageId: null };
     writeAll({ ...readAll(), [cat]: next });
     await postMessage(channel, cat, next, await renderLineup(next));
     console.log(`🏁 [Lineups] ${cat}: ${season.title} posted, team role removed from ${removed} driver(s).`);
@@ -417,12 +407,12 @@ async function newSeason(client, cat, season) {
 function startLineupLoop(client) {
     let first = true;
     const check = async () => {
-        const config = loadConfig();
+        const config = readConfig();
         for (const cat of lineupLeagues(config)) {
             try {
                 const lineup = readAll()[cat];
                 const season = currentSeason(cat, config);
-                if (!lineup || lineup.version !== VERSION) await importLineup(client, cat);
+                if (!lineup?.teams) await startLineup(client, cat);
                 else if (lineup.season !== season.key) await newSeason(client, cat, season);
                 else if (first) await refreshMessage(client, cat); // on start: catch up with what changed while off
             } catch (err) {

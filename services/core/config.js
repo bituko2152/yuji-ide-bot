@@ -78,9 +78,9 @@ function expand(raw) {
 
 function readConfig() {
     const raw = JSON.parse(fs.readFileSync(configFile, 'utf-8'));
-    if (!raw.servers || !raw.leagues) {
-        throw new Error('config.json is in the old format: it needs "servers" and "leagues" (see config.example.json)');
-    }
+    // Missing sections run as empty instead of crashing the bot.
+    raw.servers ||= {};
+    raw.leagues ||= {};
     for (const [code, league] of Object.entries(raw.leagues)) league.code = code;
     return expand(raw);
 }

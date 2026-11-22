@@ -1,8 +1,8 @@
 const { readConfig } = require('../core/config');
-const { reportRound } = require('../starters/starterCalendar');
 const {
     ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, ModalBuilder,
-    StringSelectMenuBuilder, TextInputBuilder, TextInputStyle
+    StringSelectMenuBuilder, TextInputBuilder, TextInputStyle,
+    MessageFlags
 } = require('discord.js');
 const { savePenalty } = require('./penaltyStore');
 const pollStore = require('./pollStore');
@@ -45,10 +45,6 @@ const level = id => LEVELS.find(l => l.id === id);
 const type = id => TYPES.find(t => t.id === id);
 const needsType = l => Boolean(l?.time);
 const validType = (l, t) => needsType(l) && (t === 'time' || t === 'position' || (t === 'warning' && l.warning));
-
-function loadConfig() {
-    return readConfig();
-}
 
 function isSteward(member, config) {
     return !!config.stewards_role && member.roles.cache.has(config.stewards_role);
@@ -145,7 +141,7 @@ function createPoll(messageId, data) {
     return pollStore.createPoll(messageId, {
         reportId: data.reportId,
         threadId: data.threadId,
-        overrides: { report: data.report, voters: {}, votes: undefined, baseVotes: undefined, levelVotes: undefined, createdAt: Date.now() }
+        overrides: { report: data.report, voters: {}, createdAt: Date.now() }
     });
 }
 
@@ -154,8 +150,8 @@ function createPoll(messageId, data) {
 async function handleVoteSelect(interaction) {
     const messageId = interaction.message.id;
     const poll = pollStore.getPoll(messageId);
-    if (!poll?.voters) return interaction.reply({ content: '⚠️ This report is closed or too old.', ephemeral: true });
-    if (poll.submitted) return interaction.reply({ content: '⚠️ The result was already submitted.', ephemeral: true });
+    if (!poll?.voters) return interaction.reply({ content: '⚠️ This report is closed or too old.', flags: MessageFlags.Ephemeral });
+    if (poll.submitted) return interaction.reply({ content: '⚠️ The result was already submitted.', flags: MessageFlags.Ephemeral });
 
     const value = interaction.values[0];
     const userId = interaction.user.id;
@@ -181,30 +177,28 @@ async function handleVoteSelect(interaction) {
     // The dropdowns reset (they can't show each steward's own choice);
     // the tally in the embed is what changes.
     await interaction.update(render(updated));
-    return interaction.followUp({ content: note, ephemeral: true });
+    return interaction.followUp({ content: note, flags: MessageFlags.Ephemeral });
 }
 
 async function handleVotersButton(interaction) {
     const poll = pollStore.getPoll(interaction.message.id);
-    if (!poll?.voters) return interaction.reply({ content: '⚠️ This report is closed or too old.', ephemeral: true });
+    if (!poll?.voters) return interaction.reply({ content: '⚠️ This report is closed or too old.', flags: MessageFlags.Ephemeral });
 
-    const entries = Object.entries(poll.voters);
-    const earlier = entries.filter(([uid]) => uid.startsWith(EARLIER)).length;
-    const lines = entries.filter(([uid]) => !uid.startsWith(EARLIER)).map(([uid, v]) => {
+    const lines = Object.entries(poll.voters).map(([uid, v]) => {
         const l = level(v.level);
         const t = l && validType(l, v.type) ? ` · ${type(v.type).label}` : (needsType(l) ? ' · (no type)' : '');
         return `<@${uid}> → **${l ? l.label : '(no level)'}${t}**`;
     });
     const embed = new EmbedBuilder().setColor('#5865F2').setTitle('👁️ Voters for this report')
-        .setDescription([...lines, ...(earlier ? [`+ ${earlier} earlier vote${earlier > 1 ? 's' : ''} (restored, voters unknown)`] : [])].join('\n') || 'No votes yet.');
+        .setDescription(lines.join('\n') || 'No votes yet.');
 
     // Visible to everyone in the thread, without pinging the voters.
     const thread = poll.threadId ? await interaction.guild.channels.fetch(poll.threadId).catch(() => null) : null;
     if (thread) {
         await thread.send({ embeds: [embed], allowedMentions: { parse: [] } });
-        return interaction.reply({ content: '✅ Voter list posted in the thread.', ephemeral: true });
+        return interaction.reply({ content: '✅ Voter list posted in the thread.', flags: MessageFlags.Ephemeral });
     }
-    return interaction.reply({ embeds: [embed], ephemeral: true });
+    return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
 }
 
 // ---------------------------------------------------------------- submit result
@@ -219,7 +213,7 @@ function mostVoted(poll) {
     return { level: levelId, type: typeId, amount: null };
 }
 
-// Level/type/amount of a result saved before they were stored (only its texts).
+// Level/type/amount of a result known only by its texts (a poll recovered from its message).
 function draftFromResult(sub) {
     for (const l of LEVELS) {
         if (l.label !== sub.offense) continue;
@@ -232,7 +226,7 @@ function draftFromResult(sub) {
     return null;
 }
 
-// The results-channel message of an older result (no id saved): the bot's
+// The results-channel message of a result whose id isn't known (a recovered poll): the bot's
 // latest message there about this report (same proof and culprit).
 async function findResultMessage(channel, poll) {
     const r = poll.report;
@@ -253,7 +247,7 @@ async function findResultMessage(channel, poll) {
 function submitView(messageId, poll, draft) {
     const d = decision(draft.level, draft.type, draft.amount);
     const r = poll.report;
-    const channelId = loadConfig().report_results_channel;
+    const channelId = readConfig().report_results_channel;
     const content =
         `**${poll.submitted ? 'Rectify' : 'Submit'} result · Report #${poll.reportId}** → posted in <#${channelId}>` +
         (poll.submitted ? ' as a reply to the previous result\n' : '\n') +
@@ -278,18 +272,18 @@ function submitView(messageId, poll, draft) {
 }
 
 async function handleSubmitButton(interaction) {
-    if (!isSteward(interaction.member, loadConfig())) {
-        return interaction.reply({ content: '❌ Only stewards can submit the result.', ephemeral: true });
+    if (!isSteward(interaction.member, readConfig())) {
+        return interaction.reply({ content: '❌ Only stewards can submit the result.', flags: MessageFlags.Ephemeral });
     }
     const messageId = interaction.message.id;
     const poll = pollStore.getPoll(messageId);
-    if (!poll?.voters) return interaction.reply({ content: '⚠️ This report is closed or too old.', ephemeral: true });
+    if (!poll?.voters) return interaction.reply({ content: '⚠️ This report is closed or too old.', flags: MessageFlags.Ephemeral });
     // Rectifying starts from the result posted before.
     const s = poll.submitted;
     const draft = s?.level ? { level: s.level, type: s.type ?? null, amount: s.amount ?? null }
         : s ? draftFromResult(s) || mostVoted(poll) : mostVoted(poll);
     pollStore.updatePoll(messageId, p => { p.draft = draft; });
-    return interaction.reply({ ...submitView(messageId, poll, draft), ephemeral: true });
+    return interaction.reply({ ...submitView(messageId, poll, draft), flags: MessageFlags.Ephemeral });
 }
 
 // Level / type changed in the private submit view.
@@ -331,7 +325,7 @@ async function handleConfirmButton(interaction) {
     const [, action, messageId] = interaction.customId.split('_'); // report_confirm_<id> / report_cancel_<id>
     if (action === 'cancel') return interaction.update({ content: '❎ Cancelled, nothing was posted.', components: [] });
 
-    const config = loadConfig();
+    const config = readConfig();
     if (!isSteward(interaction.member, config)) return interaction.update({ content: '❌ Only stewards can submit the result.', components: [] });
 
     const poll = pollStore.getPoll(messageId);
@@ -379,77 +373,10 @@ async function handleConfirmButton(interaction) {
     return interaction.update({ content: rectifying ? '✅ Rectification posted.' : '✅ Result submitted.', components: [] });
 }
 
-// ---------------------------------------------------------------- migration
-
-// Report data from an old-format message (fields "ID:", "Culprit:", ...).
-function parseOldReport(message) {
-    const f = Object.fromEntries((message.embeds[0]?.fields || []).map(x => [x.name.replace(/:$/, ''), x.value]));
-    return {
-        culpritId: f.Culprit?.match(/<@!?(\d+)>/)?.[1] || null,
-        round: (f.Round || '').replace(/`/g, '').trim(),
-        description: (f.Description || '').replace(/^>\s?/, ''),
-        proof: f.Proof?.match(/\((https?:\/\/[^)]+)\)/)?.[1] || '',
-        reporterName: (f.Notes || '').match(/Submitted by (.+)$/)?.[1] || null,
-        reporterId: null,
-        avatarUrl: message.embeds[0]?.thumbnail?.url || null
-    };
-}
-
-/*
- * Reports of the current rounds still on an older poll get the S26 message
- * (votes reset). Editing a message doesn't ping again.
- */
-async function migrateOldPolls(client) {
-    const config = loadConfig();
-    const currentRounds = new Set(Object.entries(config.report_leagues || {}).map(([cat, c]) => reportRound(cat, config) || c.round));
-    const channel = await client.channels.fetch(config.reports_channel).catch(() => null);
-    if (!channel) return;
-
-    for (const [messageId, poll] of Object.entries(pollStore.readAll())) {
-        if (poll.report) continue; // already S26
-        const message = await channel.messages.fetch(messageId).catch(() => null);
-        if (!message) continue;
-        const report = parseOldReport(message);
-        if (!currentRounds.has(report.round)) continue;
-
-        const updated = pollStore.updatePoll(messageId, p => {
-            p.report = report;
-            p.voters = {};
-            delete p.votes;
-            delete p.baseVotes;
-            delete p.levelVotes;
-            delete p.draft;
-            delete p.submitted;
-            p.createdAt ??= message.createdTimestamp;
-        });
-        await message.edit({ ...render(updated), allowedMentions: { parse: [] } });
-        console.log(`🔁 [Reports] Report ${poll.reportId} moved to the S26 penalty system.`);
-    }
-}
-
 // ---------------------------------------------------------------- recovery
 
-// Votes restored from the tally shown in the message ("Level 2 ×2 (Time 1 ·
-// Position 1)"): who voted isn't known, so they're kept as anonymous voters
-// "earlier:<n>". They count in the tally and for the most voted result.
-const EARLIER = 'earlier:';
-const RECOVER_DAYS = 15;
-function votersFromTally(text) {
-    const voters = {};
-    let n = 0;
-    for (const line of String(text || '').split('\n')) {
-        const m = line.match(/^(.+?) ×(\d+)(?: \((.+)\))?$/);
-        const l = m && LEVELS.find(x => x.label === m[1].trim());
-        if (!l) continue;
-        const types = [];
-        for (const part of (m[3] || '').split(' · ')) {
-            const t = part.match(/^(.+?) (\d+)$/), tt = t && TYPES.find(x => x.label === t[1]);
-            if (tt) for (let i = 0; i < Number(t[2]); i++) types.push(tt.id);
-        }
-        for (let i = 0; i < Number(m[2]); i++) voters[`${EARLIER}${++n}`] = { level: l.id, ...(types[i] ? { type: types[i] } : {}) };
-    }
-    return voters;
-}
+// Polls are rebuilt for reports up to the daily cleanup's age.
+const RECOVER_DAYS = 30;
 
 // Report data back from a report message (S26 embed), for when data/polls.json
 // lost it. Who voted what isn't in the message, so those votes start again.
@@ -470,7 +397,7 @@ function parseReportMessage(message) {
     // "✅ L2 | Time | 3s\nby <@id>"
     const r = f.Result?.match(/✅\s*(.+?)\s*\|\s*(.+?)\s*\|\s*(.+?)\s*\n\s*by <@!?(\d+)>/);
     const submitted = r ? { offense: r[1], kind: r[2], penalty: r[3], by: r[4] } : null;
-    return { reportId: Number(id), report, submitted, voters: votersFromTally(f.Votes), createdAt: e.timestamp ? Date.parse(e.timestamp) : message.createdTimestamp };
+    return { reportId: Number(id), report, submitted, voters: {}, createdAt: e.timestamp ? Date.parse(e.timestamp) : message.createdTimestamp };
 }
 
 /*
@@ -479,36 +406,27 @@ function parseReportMessage(message) {
  * already submitted are kept; open votes start from zero.
  */
 async function recoverLostPolls(client) {
-    const config = loadConfig();
+    const config = readConfig();
     const channel = await client.channels.fetch(config.reports_channel).catch(() => null);
     if (!channel) return;
     const known = pollStore.readAll();
-    // Same window as the daily cleanup (which drops polls older than 15 days
+    // Same window as the daily cleanup (which drops polls older than 30 days
     // but leaves their messages): older reports stay closed.
     const since = Date.now() - RECOVER_DAYS * 24 * 60 * 60 * 1000;
-    let before, recovered = 0, refreshed = 0;
+    let before, recovered = 0;
     for (let page = 0; page < 10; page++) {
         const batch = await channel.messages.fetch({ limit: 100, before }).catch(() => null);
         if (!batch?.size) break;
         for (const message of batch.values()) {
             if (message.createdTimestamp < since) continue;
             if (message.author.id !== client.user.id) continue;
-            if (known[message.id]) {
-                // Results posted before "Rectify result" existed: add the button.
-                const poll = known[message.id];
-                const hasRectify = message.components.some(row => row.components?.some(c => c.customId === 'report_submit'));
-                if (poll.submitted && poll.report && !hasRectify) {
-                    await message.edit({ ...render(poll), allowedMentions: { parse: [] } }).catch(() => {});
-                    refreshed++;
-                }
-                continue;
-            }
+            if (known[message.id]) continue;
             const parsed = parseReportMessage(message);
             if (!parsed) continue;
             pollStore.createPoll(message.id, {
                 reportId: parsed.reportId,
                 threadId: message.thread?.id || null,
-                overrides: { report: parsed.report, voters: parsed.voters, votes: undefined, baseVotes: undefined, levelVotes: undefined,
+                overrides: { report: parsed.report, voters: parsed.voters,
                     createdAt: parsed.createdAt, ...(parsed.submitted ? { submitted: parsed.submitted } : {}) }
             });
             recovered++;
@@ -517,14 +435,12 @@ async function recoverLostPolls(client) {
         if (batch.last().createdTimestamp < since) break; // the rest is older
     }
     if (recovered) console.log(`🔁 [Reports] Recovered ${recovered} report poll(s) from the reports channel.`);
-    if (refreshed) console.log(`🔁 [Reports] Added the rectify button to ${refreshed} submitted report(s).`);
 }
 
 // ---------------------------------------------------------------- routing
 
 async function handleReportComponent(interaction) {
     const id = interaction.customId;
-    if (id.startsWith('vote_')) return interaction.reply({ content: '⚠️ This poll is closed or too old.', ephemeral: true });
     if (id === 'report_vote_level' || id === 'report_vote_type') return handleVoteSelect(interaction);
     if (id === 'report_voters') return handleVotersButton(interaction);
     if (id === 'report_submit') return handleSubmitButton(interaction);
@@ -535,6 +451,6 @@ async function handleReportComponent(interaction) {
     return null;
 }
 
-const isReportComponent = id => id.startsWith('report_') || id.startsWith('vote_');
+const isReportComponent = id => id.startsWith('report_');
 
-module.exports = { render, createPoll, migrateOldPolls, recoverLostPolls, handleReportComponent, isReportComponent };
+module.exports = { render, createPoll, recoverLostPolls, handleReportComponent, isReportComponent };
