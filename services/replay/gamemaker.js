@@ -148,4 +148,26 @@ async function extractSprites(b, names) {
     return out;
 }
 
-module.exports = { extractSprites };
+/**
+ * The named sounds stored inside the data file (SOND: name, flags, type, file,
+ * effects, volume, pitch, audio group, audio id; AUDO: [u32 length][WAV/OGG]).
+ * Only group 0 is in this file; missing names are skipped.
+ * @returns {Map<string, Buffer>}
+ */
+function extractSounds(b, names) {
+    const chunks = chunksOf(b);
+    if (!chunks.SOND || !chunks.AUDO) return new Map();
+    const list = c => Array.from({ length: b.readUInt32LE(c.start) }, (_, i) => b.readUInt32LE(c.start + 4 + i * 4));
+    const audio = list(chunks.AUDO);
+    const want = new Set(names), out = new Map();
+    for (const p of list(chunks.SOND)) {
+        const name = str(b, b.readUInt32LE(p));
+        const group = b.readInt32LE(p + 28), id = b.readInt32LE(p + 32);
+        if (!want.has(name) || group !== 0 || id < 0 || id >= audio.length) continue;
+        const at = audio[id];
+        out.set(name, Buffer.from(b.subarray(at + 4, at + 4 + b.readUInt32LE(at))));
+    }
+    return out;
+}
+
+module.exports = { extractSprites, extractSounds };

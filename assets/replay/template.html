@@ -212,6 +212,10 @@ details.liv summary { cursor: pointer; font-family: var(--font-display); font-we
     <div class="grp" id="speeds" role="group" aria-label="Playback speed"><span>Speed</span></div>
     <div class="grp" id="zooms" role="group" aria-label="Camera zoom"><span>Zoom</span></div>
     <div class="grp" id="lagview" role="group" aria-label="Driver latency"><span>Latency</span></div>
+    <div class="grp" id="sound" role="group" aria-label="Sound"><span>Sound</span>
+      <button id="sndBtn" type="button" aria-pressed="false" title="Sound on / off (N)">🔇 Off</button>
+      <input id="sndVol" type="range" min="0" max="1" step="0.05" value="0.6" aria-label="Volume" style="flex: none; width: 84px">
+    </div>
     <div class="scrub">
       <input id="seek" type="range" min="0" value="0" step="1" aria-label="Race time">
       <span class="clock" id="clock">0:00.0 <small>/ 0:00</small></span>
@@ -240,6 +244,7 @@ details.liv summary { cursor: pointer; font-family: var(--font-display); font-we
         <dt><kbd>M</kbd></dt><dd>Show / hide the minimap</dd>
         <dt><kbd>H</kbd></dt><dd>Show / hide timing tower and driver card</dd>
         <dt><kbd>F</kbd></dt><dd>Fullscreen</dd>
+        <dt><kbd>N</kbd></dt><dd>Sound on / off</dd>
         <dt><kbd>?</kbd> / <kbd>Esc</kbd></dt><dd>Show / close this help</dd>
       </dl>
     </div>
@@ -757,14 +762,265 @@ function drawSpray(g, c, wet, sx, sy) {
   const p = posAt(c, tOf(c, t)); if (!p) return;
   const sp = Math.min(1, (p.v || 0) / 450); if (sp < 0.15) return;
   const amt = wet * sp;
-  for (let j = 1; j <= 10; j++) {
-    const q = posAt(c, tOf(c, t - j * 3)); if (!q) break;
-    const r = (7 + j * 3.5) * zoom, a = 0.5 * amt * (1 - j / 11);
-    const gr = g.createRadialGradient(sx(q.x), sy(q.y), 0, sx(q.x), sy(q.y), r);
-    gr.addColorStop(0, `rgba(225, 235, 245, ${a})`); gr.addColorStop(1, 'rgba(225, 235, 245, 0)');
-    g.fillStyle = gr; g.beginPath(); g.arc(sx(q.x), sy(q.y), r, 0, Math.PI * 2); g.fill();
+  // The path of the last half second, then soft puffs laid along it close enough to
+  // overlap (by distance, not by time: at speed the old per-frame puffs showed as dots).
+  const pts = [];
+  for (let j = 1; j <= SPRAY_FRAMES; j++) {
+    const q = posAt(c, tOf(c, t - j)); if (!q) break;
+    pts.push([sx(q.x), sy(q.y)]);
   }
+  if (pts.length < 2) return;
+  let total = 0;
+  for (let i = 1; i < pts.length; i++) total += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+  if (total < 1) return;
+  let seg = 1, segStart = 0, segLen = Math.hypot(pts[1][0] - pts[0][0], pts[1][1] - pts[0][1]);
+  for (let d = 0; d <= total;) {
+    const f = d / total, r = (6 + 34 * f) * zoom;
+    while (segStart + segLen < d && seg < pts.length - 1) { segStart += segLen; seg++; segLen = Math.hypot(pts[seg][0] - pts[seg - 1][0], pts[seg][1] - pts[seg - 1][1]); }
+    const u = segLen ? Math.min(1, (d - segStart) / segLen) : 0;
+    const x = pts[seg - 1][0] + (pts[seg][0] - pts[seg - 1][0]) * u, y = pts[seg - 1][1] + (pts[seg][1] - pts[seg - 1][1]) * u;
+    const step = Math.max(1.5, r * 0.35);
+    g.globalAlpha = Math.min(1, 0.5 * amt * (1 - f) * (step / r) * 1.6);
+    g.drawImage(SPRAY_PUFF, x - r, y - r, r * 2, r * 2);
+    d += step;
+  }
+  g.globalAlpha = 1;
 }
+const SPRAY_FRAMES = 30;
+// One soft white puff, drawn once and scaled for every spray puff.
+const SPRAY_PUFF = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const g = c.getContext('2d'), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, 'rgba(225, 235, 245, 1)'); gr.addColorStop(0.5, 'rgba(225, 235, 245, 0.45)'); gr.addColorStop(1, 'rgba(225, 235, 245, 0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+  return c;
+})();
+
+// ---- Sound (Web Audio, all synthesized). Off when the page opens; the choice is remembered.
+// Engines of up to 6 cars on screen (the followed one loudest), panned by where they are and
+// quieter when zoomed out; start lights, a beep when the followed car crosses the line, a
+// whoosh when it gains or loses a place, the chequered flag; rain when it rains.
+// Paused: silence. Jumps in time don't play what was skipped. At 4× only the engines.
+const SND_KEY = 'ur2d2:sound';
+const snd = {
+  ac: null, on: false, vol: 0.6, voices: [], master: null, rainGain: null, jumped: true,
+  prevT: 0, lapOf: null, posOf: null, leadFin: false, meFin: false, followed: null,
+  saved() { const s = store.get(SND_KEY); if (s) { this.on = false; this.vol = typeof s.vol === 'number' ? s.vol : 0.6; this.wanted = !!s.on; } },
+  save() { store.set(SND_KEY, { on: this.on, vol: this.vol }); },
+  init() {
+    if (this.ac) return;
+    const ac = this.ac = new (window.AudioContext || window.webkitAudioContext)();
+    this.master = ac.createGain(); this.master.gain.value = 0; this.master.connect(ac.destination);
+    const load = uri => fetch(uri).then(r => r.arrayBuffer()).then(b => ac.decodeAudioData(b));
+    const S = DATA.sounds;
+    // The game's own engine sound when the replay has it (one looping copy per car), else a synthesized one.
+    (S?.engine ? load(S.engine).catch(() => null) : Promise.resolve(null)).then(buf => {
+      this.sample = buf;
+      for (let i = 0; i < 6; i++) {
+        const g = ac.createGain(), pan = ac.createStereoPanner(), lp = ac.createBiquadFilter();
+        g.gain.value = 0; lp.type = 'lowpass'; lp.frequency.value = 20000;
+        lp.connect(g); g.connect(pan); pan.connect(this.master);
+        const v = { g, pan, lp, id: null };
+        if (buf) {
+          v.src = ac.createBufferSource(); v.src.buffer = buf; v.src.loop = true;
+          v.src.connect(lp); v.src.start(0, (i / 6) * buf.duration);
+        } else {
+          v.o1 = ac.createOscillator(); v.o2 = ac.createOscillator(); v.o1.type = 'sawtooth'; v.o2.type = 'square'; lp.Q.value = 2;
+          const g2 = ac.createGain(); g2.gain.value = 0.35;
+          v.o1.connect(lp); v.o2.connect(g2); g2.connect(lp); v.o1.start(); v.o2.start();
+        }
+        this.voices.push(v);
+      }
+    });
+    if (S?.start) load(S.start).then(b => { this.startBuf = b; }).catch(() => {});
+    // Rain, built from pink and brown noise (softer than white noise, which sounds like radio static):
+    //  - a soft wash (pink noise, low-passed, slowly breathing),
+    //  - a low rumble (brown noise),
+    //  - single drops (short filtered taps, random pitch and side; see rainDrops),
+    //  - the hiss of wet tyres, rising with the followed car's speed.
+    const noise = (kind, secs = 4) => {
+      const len = ac.sampleRate * secs, buf = ac.createBuffer(2, len, ac.sampleRate);
+      for (let ch = 0; ch < 2; ch++) {
+        const d = buf.getChannelData(ch);
+        let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0, last = 0;
+        for (let i = 0; i < len; i++) {
+          const w = Math.random() * 2 - 1;
+          if (kind === 'pink') { // Paul Kellet's filter
+            b0 = 0.99886 * b0 + w * 0.0555179; b1 = 0.99332 * b1 + w * 0.0750759; b2 = 0.969 * b2 + w * 0.153852;
+            b3 = 0.8665 * b3 + w * 0.3104856; b4 = 0.55 * b4 + w * 0.5329522; b5 = -0.7616 * b5 - w * 0.016898;
+            d[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + w * 0.5362) * 0.11; b6 = w * 0.115926;
+          } else { last = (last + 0.02 * w) / 1.02; d[i] = last * 3.5; } // brown
+        }
+      }
+      return buf;
+    };
+    const loop = (buf, ...nodes) => {
+      const s = ac.createBufferSource(); s.buffer = buf; s.loop = true;
+      nodes.reduce((a, n) => (a.connect(n), n), s); s.start(); return s;
+    };
+    const pink = noise('pink'), brown = noise('brown');
+    this.rainGain = ac.createGain(); this.rainGain.gain.value = 0; this.rainGain.connect(this.master);
+    const washLp = ac.createBiquadFilter(); washLp.type = 'lowpass'; washLp.frequency.value = 2600; washLp.Q.value = 0.3;
+    const washHp = ac.createBiquadFilter(); washHp.type = 'highpass'; washHp.frequency.value = 250;
+    const breathe = ac.createGain(); breathe.gain.value = 0.8;
+    const lfo = ac.createOscillator(), lfoAmt = ac.createGain(); lfo.frequency.value = 0.13; lfoAmt.gain.value = 0.2;
+    lfo.connect(lfoAmt); lfoAmt.connect(breathe.gain); lfo.start();
+    loop(pink, washHp, washLp, breathe, this.rainGain);
+    const rumbleLp = ac.createBiquadFilter(); rumbleLp.type = 'lowpass'; rumbleLp.frequency.value = 350;
+    const rumble = ac.createGain(); rumble.gain.value = 0.5;
+    loop(brown, rumbleLp, rumble, this.rainGain);
+    this.hiss = ac.createGain(); this.hiss.gain.value = 0;
+    const hissBp = ac.createBiquadFilter(); hissBp.type = 'bandpass'; hissBp.frequency.value = 1800; hissBp.Q.value = 0.6;
+    loop(pink, hissBp, this.hiss, this.master);
+    // One drop: a few ms of noise dying away quickly.
+    const dl = Math.floor(ac.sampleRate * 0.03);
+    this.drop = ac.createBuffer(1, dl, ac.sampleRate);
+    const dd = this.drop.getChannelData(0);
+    for (let i = 0; i < dl; i++) dd[i] = (Math.random() * 2 - 1) * Math.exp(-i / (dl / 6));
+    this.dropDebt = 0; this.lastFrame = ac.currentTime;
+  },
+  set(on) {
+    this.on = on;
+    if (on) { this.init(); this.ac.resume(); this.jumped = true; }
+    this.apply(); this.save();
+    const b = document.getElementById('sndBtn'); b.textContent = on ? '🔊 On' : '🔇 Off'; b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  },
+  apply() {
+    if (!this.ac) return;
+    const live = this.on && playing;
+    this.master.gain.setTargetAtTime(live ? this.vol * 0.5 : 0, this.ac.currentTime, 0.05);
+    if (live) this.ac.resume(); else if (!this.on) this.ac.suspend();
+  },
+  // A short tone (lights, line beep) or a noise sweep (whoosh, flag).
+  beep(freq, dur, gain = 0.25, type = 'sine') {
+    const ac = this.ac, o = ac.createOscillator(), g = ac.createGain(), t0 = ac.currentTime;
+    o.type = type; o.frequency.value = freq; g.gain.setValueAtTime(0, t0);
+    g.gain.linearRampToValueAtTime(gain, t0 + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    o.connect(g); g.connect(this.master); o.start(t0); o.stop(t0 + dur + 0.05);
+  },
+  whoosh(up) {
+    const ac = this.ac, t0 = ac.currentTime, len = Math.floor(ac.sampleRate * 0.5);
+    const buf = ac.createBuffer(1, len, ac.sampleRate), d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    const s = ac.createBufferSource(), bp = ac.createBiquadFilter(), g = ac.createGain();
+    s.buffer = buf; bp.type = 'bandpass'; bp.Q.value = 3;
+    bp.frequency.setValueAtTime(up ? 500 : 2200, t0); bp.frequency.exponentialRampToValueAtTime(up ? 2200 : 500, t0 + 0.4);
+    g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(0.35, t0 + 0.08); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.45);
+    s.connect(bp); bp.connect(g); g.connect(this.master); s.start(t0);
+  },
+  flag(soft) { [0, 0.18, 0.36].forEach((dt, i) => setTimeout(() => this.on && this.beep(i === 2 ? 1047 : 784, 0.25, soft ? 0.12 : 0.25, 'triangle'), dt * 1000)); },
+  // Called every frame from draw(): engines and rain follow what is on screen.
+  frame(now, sx, sy, wet) {
+    if (!this.on || !this.ac) return;
+    const ac = this.ac, at = ac.currentTime, quiet = !playing;
+    const zoomVol = Math.min(1, 0.25 + 0.75 * (zoom - ZOOMS[0]) / (ZOOMS[2] - ZOOMS[0] || 1));
+    const seen = [];
+    for (const c of cars) {
+      const p = now[c.id]; if (!p || (QUALI && c.id !== followId)) continue;
+      const X = sx(p.x), Y = sy(p.y); if (X < -40 || Y < -40 || X > W + 40 || Y > H + 40) continue;
+      const off = Math.hypot(X - W / 2, Y - H / 2) / Math.hypot(W / 2, H / 2);
+      seen.push({ c, p, X, off, me: !freeCam && c.id === followId });
+    }
+    seen.sort((a, b) => b.me - a.me || a.off - b.off);
+    const pick = seen.slice(0, 6);
+    for (const v of this.voices) {
+      const s = pick.find(x => x.c.id === v.id) || null;
+      if (!s) { const free = pick.find(x => !this.voices.some(w => w.id === x.c.id)); if (free) v.id = free.c.id; }
+    }
+    for (const v of this.voices) {
+      const s = pick.find(x => x.c.id === v.id);
+      if (!s || quiet) { v.g.gain.setTargetAtTime(0, at, 0.05); if (!s) v.id = null; continue; }
+      const sp = Math.min(1, (s.p.v || 0) / 500), rate = Math.sqrt(speed);
+      if (v.src) v.src.playbackRate.setTargetAtTime(enginePitch((s.p.v || 0) / HZ) * rate, at, 0.04);
+      else {
+        const f = (48 + 150 * sp) * rate;
+        v.o1.frequency.setTargetAtTime(f, at, 0.04); v.o2.frequency.setTargetAtTime(f * 2.01, at, 0.04);
+        v.lp.frequency.setTargetAtTime(400 + 2200 * sp, at, 0.05);
+      }
+      const level = (s.me ? 0.3 : 0.14) * (0.35 + 0.65 * sp) * (1 - 0.7 * Math.min(1, s.off)) * zoomVol;
+      v.g.gain.setTargetAtTime(level, at, 0.05);
+      v.pan.pan.setTargetAtTime(Math.max(-1, Math.min(1, (s.X - W / 2) / (W / 2))) * 0.8, at, 0.05);
+    }
+    const rain = quiet ? 0 : wet.rain;
+    this.rainGain.gain.setTargetAtTime(0.35 * rain * (0.4 + 0.6 * zoomVol), at, 0.4);
+    const me = !freeCam && now[followId];
+    this.hiss.gain.setTargetAtTime(quiet || !me ? 0 : 0.12 * wet.wet * Math.min(1, (me.v || 0) / 450) * zoomVol, at, 0.15);
+    this.rainDrops(rain, at);
+  },
+  // Weather forecast popup: a soft three-note chime when it comes up (rising for rain, falling for clearing up).
+  forecast(al) {
+    const was = this.alertShown; this.alertShown = al || null;
+    if (!al || al === was || !this.on || !this.ac || !playing || this.jumped || speed >= 4) return;
+    const wetter = /rain|storm/.test(al[1]);
+    const notes = wetter ? [659, 784, 988] : [988, 784, 659];
+    notes.forEach((f, i) => setTimeout(() => this.on && this.beep(f, 0.5, 0.14, 'sine'), i * 140));
+  },
+  // Single drops, more of them the harder it rains (up to ~40 a second), each a little different.
+  rainDrops(rain, at) {
+    const dt = Math.min(0.25, at - this.lastFrame); this.lastFrame = at;
+    if (rain <= 0.05 || speed >= 4) { this.dropDebt = 0; return; }
+    this.dropDebt += dt * 40 * rain * rain;
+    while (this.dropDebt >= 1) {
+      this.dropDebt--;
+      const ac = this.ac, s = ac.createBufferSource(), bp = ac.createBiquadFilter(), g = ac.createGain(), pan = ac.createStereoPanner();
+      s.buffer = this.drop; s.playbackRate.value = 0.7 + Math.random() * 0.8;
+      bp.type = 'bandpass'; bp.frequency.value = 1500 + Math.random() * 4500; bp.Q.value = 1.5 + Math.random() * 3;
+      g.gain.value = 0.03 + Math.random() * 0.09; pan.pan.value = Math.random() * 1.6 - 0.8;
+      s.connect(bp); bp.connect(g); g.connect(pan); pan.connect(this.master);
+      s.start(at + Math.random() * dt);
+    }
+  },
+  // Called with the standings (10 times a second): line, places, flags, start lights.
+  events(st, k) {
+    const me = st.find(o => o.c.id === followId), lead = st[0];
+    const lap = Math.floor((raced(cars.find(c => c.id === followId), t) ?? -Infinity) / LAP);
+    const fresh = this.jumped || this.followed !== followId || !playing || !this.on || !this.ac;
+    const calm = speed >= 4;
+    if (!fresh && !calm) {
+      if (!QUALI && START != null) {
+        if (this.startBuf && DATA.sounds.startGo != null) {
+          // The game's start sound, played at pitch 1.6 as the game does, its last ("go") tone on the start.
+          const at = START - DATA.sounds.startGo / 1.6 * HZ;
+          if (this.prevT < at && t >= at) {
+            const s = this.ac.createBufferSource(), g = this.ac.createGain();
+            s.buffer = this.startBuf; s.playbackRate.value = 1.6 * speed; g.gain.value = 0.5;
+            s.connect(g); g.connect(this.master); s.start();
+          }
+        } else for (let i = 5; i >= 0; i--) {
+          const at = START - i * HZ;
+          if (this.prevT < at && t >= at) this.beep(i ? 440 : 880, i ? 0.25 : 0.6, 0.25, 'square');
+        }
+      }
+      if (isFinite(lap) && this.lapOf != null && lap > this.lapOf && lap >= 1 && !me?.finished) this.beep(1320, 0.12, 0.18);
+      if (!QUALI && me && this.posOf != null && me.pos !== this.posOf && Math.abs(me.pos - this.posOf) <= 2) this.whoosh(me.pos < this.posOf);
+      if (!QUALI && lead?.finished && !this.leadFin) this.flag(false);
+      if (me?.finished && !this.meFin && (QUALI || lead !== me)) this.flag(true);
+    }
+    this.lapOf = isFinite(lap) ? lap : null; this.posOf = me ? me.pos : null;
+    this.leadFin = !!lead?.finished; this.meFin = !!me?.finished;
+    this.prevT = t; this.followed = followId; this.jumped = false;
+  }
+};
+// Engine pitch as in the game: 7 gears from the class's top speed (px/frame); in each
+// gear the pitch rises from 0.55 to 0.85 (script_sound_step).
+const TOP = DATA.sounds?.topSpeed || 7.5;
+const GEARS = [0, 0.25, 0.47, 0.67, 0.82, 0.92, 1.02, 1.12].map(k => k * TOP);
+function enginePitch(v) {
+  let g = 1; while (g < GEARS.length - 1 && v > GEARS[g]) g++;
+  return 0.55 + 0.3 * Math.max(0, Math.min(1, (v - GEARS[g - 1]) / (GEARS[g] - GEARS[g - 1])));
+}
+// Race start: the first frame any car has moved off its grid spot.
+const START = QUALI ? null : (() => {
+  let best = Infinity;
+  for (const c of cars) {
+    let k0 = -1;
+    for (let k = 0; k < total; k++) {
+      if (c.p[k] === NONE32) continue;
+      if (k0 < 0) k0 = k; else if (c.p[k] - c.p[k0] > CAR_LEN / 2) { best = Math.min(best, k); break; }
+    }
+  }
+  return isFinite(best) && best >= 5 * HZ ? best : null;
+})();
 
 function draw() {
   const k = Math.min(total - 1, Math.floor(t));
@@ -818,12 +1074,14 @@ function draw() {
     g.globalAlpha = 1;
   }
   drawRain(g, wx, t / HZ);
+  snd.frame(now, sx, sy, wx);
   const al = alertAt(k), pop = document.getElementById('wxAlert');
   if (al) {
     const [icon, name] = WEATHER_NAMES[al[1]] || [WX_ICONS.cloud, al[1].toUpperCase()];
     setHTML('wxAlert', `<span class="ic">${icon}</span><span class="tx"><small>WEATHER FORECAST</small>${name} SOON</span>`);
   }
   pop.classList.toggle('show', !!al);
+  snd.forecast(al);
 
   // Minimap
   const mw = mini.width / dpr, mh = mini.height / dpr, mk = mw / DATA.mini.w;
@@ -844,6 +1102,7 @@ function draw() {
   if (playing && wall - lastHud < 100 && !hudDirty) return;
   lastHud = wall; hudDirty = false;
   const st = standings(k), lead = st[0];
+  snd.events(st, k);
   if (QUALI) {
     // Qualifying: the followed driver's lap (each car runs its own laps).
     const m = st.find(o => o.c.id === followId);
@@ -893,6 +1152,7 @@ function loop(ts) {
 }
 function setPlaying(on) {
   playing = on; document.getElementById('play').textContent = on ? 'Pause' : 'Play';
+  snd.jumped = true; snd.apply();
   if (on) { if (t >= total - 1) t = 0; requestAnimationFrame(loop); }
 }
 
@@ -927,7 +1187,16 @@ else group('lagview', [true, false], v => (v ? 'As seen in game' : 'Raw'), true,
 renderDrivers(); renderSlots(); renderAssign();
 
 const seek = document.getElementById('seek'); seek.max = total - 1;
-seek.oninput = () => { t = +seek.value; lastOrder = []; hudDirty = true; draw(); };
+seek.oninput = () => { t = +seek.value; lastOrder = []; hudDirty = true; snd.jumped = true; draw(); };
+snd.saved();
+document.getElementById('sndVol').value = snd.vol;
+// Browsers only allow sound after a click or key press: if it was on last time, it comes back on then.
+if (snd.wanted) {
+  const back = e => { if (e.target.id !== 'sndBtn' && !/^n$/i.test(e.key || '') && !snd.on) snd.set(true); removeEventListener('pointerdown', back, true); removeEventListener('keydown', back, true); };
+  addEventListener('pointerdown', back, true); addEventListener('keydown', back, true);
+}
+document.getElementById('sndBtn').onclick = () => snd.set(!snd.on);
+document.getElementById('sndVol').oninput = e => { snd.vol = +e.target.value; snd.apply(); snd.save(); };
 document.getElementById('play').onclick = () => setPlaying(!playing);
 document.getElementById('meta').textContent = `${DATA.trackName || 'Race'} · ${cars.length} drivers · ${DATA.duration ? `${fmt(DATA.duration).replace(/\.0$/, '')} race, ${LAPS} laps` : `${LAPS} ${QUALI ? 'qualifying ' : ''}lap${LAPS === 1 ? '' : 's'}`} · 60 samples/s`;
 if (QUALI) {
@@ -943,7 +1212,7 @@ keysPanel.onclick = e => { if (e.target === keysPanel) keysPanel.classList.remov
 
 function jumpTo(frame) {
   t = Math.max(0, Math.min(total - 1, frame));
-  lastOrder = []; hudDirty = true; draw();
+  lastOrder = []; hudDirty = true; snd.jumped = true; draw();
 }
 function follow(id) {
   if (!id || (id === followId && !freeCam)) return;
@@ -984,6 +1253,7 @@ document.addEventListener('keydown', e => {
   else if (k === '+' || k === '=') pressGroup('speeds', 1);
   else if (k === 'z' || k === 'Z') pressGroup('zooms', 'cycle');
   else if ((k === 'v' || k === 'V') && !QUALI) pressGroup('lagview', 'cycle');
+  else if (k === 'n' || k === 'N') snd.set(!snd.on);
   else if (k === 'm' || k === 'M') mini.style.visibility = mini.style.visibility === 'hidden' ? '' : 'hidden';
   else if (k === 'h' || k === 'H') for (const el of document.querySelectorAll('.tv')) el.style.visibility = el.style.visibility === 'hidden' ? '' : 'hidden';
   else if (k === 'f' || k === 'F') {

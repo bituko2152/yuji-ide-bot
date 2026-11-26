@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 const { createCanvas, loadImage } = require('@napi-rs/canvas');
-const { getTrack, getMinimap, getCarClass, officialTracks, originalTracks } = require('./assets');
+const { getTrack, getMinimap, getCarClass, getSounds, officialTracks, originalTracks } = require('./assets');
 
 /*
  * Fills assets/replay/template.html with a race: replay data from the
@@ -151,6 +151,8 @@ async function renderReplay(data, { lobbyName } = {}) {
     data = { ...data, track: await identifyTrack(data, drivenPoints(data)) };
     const track = await getTrack(data.track);
     const { cars: carImgs, builtIn, carLen } = await getCarClass(data.carClass);
+    // The game's engine and start sounds; without them the page synthesizes its own.
+    const sounds = await getSounds(data.carClass).catch(err => { console.warn('⚠️ [Replay] Sounds:', err.message); return null; });
 
     const trackImg = await loadImage(fs.readFileSync(track.trackFile));
     // The map is filled in last, at the best quality that still fits (see below).
@@ -187,6 +189,12 @@ async function renderReplay(data, { lobbyName } = {}) {
         liveryConfig: { assign },
         builtInClass: builtIn,
         carLen, // car length on track (world px) for this class, if known
+        sounds: sounds && {
+            engine: dataUri(sounds.engine, 'audio/wav'),
+            start: dataUri(sounds.start, 'audio/wav'),
+            startGo: sounds.startGo,
+            topSpeed: sounds.topSpeed
+        }
     };
     const title = `${track.name} — ${data.session === 'qualifying' ? 'Qualifying' : 'Race'} Replay`;
     const page = fs.readFileSync(TEMPLATE, 'utf-8')

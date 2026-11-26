@@ -8,7 +8,7 @@ const { ZSTDDecoder } = require('zstddec');
 const { requireWithFallback } = require('steam-user/components/helpers.js');
 const LZMA = requireWithFallback('lzma-native', 'lzma');
 const { getSteamUser, withSteam } = require('../steam/steamLeaderboards');
-const { extractSprites } = require('./gamemaker');
+const { extractSprites, extractSounds } = require('./gamemaker');
 
 /*
  * Track and car images for the replay, downloaded from Steam with the bot's
@@ -386,4 +386,104 @@ function carLength(dir, png) {
     return null;
 }
 
-module.exports = { getTrack, getMinimap, getCarClass, officialTracks, originalTracks };
+// ---------------------------------------------------------------- sounds
+
+// The class's engine sound and top speed (property 31 = "sound_engine_<n>", property 2 = top speed, px/frame).
+//   item.data        text, "|"-separated: field i is property i + 2
+//   class_info.data  binary: 3 doubles (the 3rd = property count), 10 cars x 6 doubles,
+//                    10 teams (3 strings + colour), 10 x 5 paint parts x 2 doubles,
+//                    then properties 2..count (13, 14, 28, 29, 44, 47, 50 are strings)
+function classSound(dir) {
+    const pick = (engine, top) => ({
+        engine: Number.isInteger(engine) && engine >= 1 && engine <= 11 ? engine : null,
+        topSpeed: top > 2 && top < 30 ? top : null
+    });
+    try {
+        const f = fs.readFileSync(path.join(dir, 'item.data'), 'latin1').split('|');
+        return pick(Number(f[29]), Number(f[0]));
+    } catch { /* no item.data */ }
+    try {
+        const b = fs.readFileSync(path.join(dir, 'class_info.data'));
+        let o = 0;
+        const dbl = () => { const v = b.readDoubleLE(o); o += 8; return v; };
+        const s = () => { const e = b.indexOf(0, o); if (e < 0) throw new Error('bad string'); o = e + 1; };
+        const count = [dbl(), dbl(), dbl()][2];
+        for (let i = 0; i < 60; i++) dbl();
+        for (let i = 0; i < 10; i++) { s(); s(); s(); dbl(); }
+        for (let i = 0; i < 100; i++) dbl();
+        const props = {};
+        for (let a = 2; a <= Math.min(count, 31); a++) props[a] = [13, 14, 28, 29].includes(a) ? s() : dbl();
+        return pick(props[31], props[2]);
+    } catch { /* no class_info.data, or another layout */ }
+    return pick(null, null);
+}
+
+// WAV (16-bit PCM) -> mono 22050 Hz 16-bit WAV, from `from` seconds on.
+function shrinkWav(wav, from = 0) {
+    let o = 12, fmt = null, data = null;
+    while (o + 8 <= wav.length) {
+        const id = wav.toString('latin1', o, o + 4), size = wav.readUInt32LE(o + 4);
+        if (id === 'fmt ') fmt = o + 8; else if (id === 'data') data = { at: o + 8, size };
+        o += 8 + size + (size & 1);
+    }
+    if (!fmt || !data || wav.readUInt16LE(fmt + 14) !== 16) return wav;
+    const ch = wav.readUInt16LE(fmt + 2), rate = wav.readUInt32LE(fmt + 4);
+    const n = Math.floor(data.size / 2 / ch), step = Math.max(1, Math.round(rate / 22050)), outRate = Math.round(rate / step);
+    const first = Math.min(n, Math.floor(from * rate));
+    const samples = [];
+    for (let i = first; i + step <= n; i += step) {
+        let sum = 0;
+        for (let j = 0; j < step; j++) for (let c = 0; c < ch; c++) sum += wav.readInt16LE(data.at + ((i + j) * ch + c) * 2);
+        samples.push(Math.round(sum / step / ch));
+    }
+    const out = Buffer.alloc(44 + samples.length * 2);
+    out.write('RIFF', 0); out.writeUInt32LE(36 + samples.length * 2, 4); out.write('WAVEfmt ', 8);
+    out.writeUInt32LE(16, 16); out.writeUInt16LE(1, 20); out.writeUInt16LE(1, 22); out.writeUInt32LE(outRate, 24);
+    out.writeUInt32LE(outRate * 2, 28); out.writeUInt16LE(2, 32); out.writeUInt16LE(16, 34);
+    out.write('data', 36); out.writeUInt32LE(samples.length * 2, 40);
+    samples.forEach((v, i) => out.writeInt16LE(v, 44 + i * 2));
+    return out;
+}
+
+// Start of each beep (seconds): sound after at least 0.1 s of silence.
+function onsets(wav) {
+    const rate = wav.readUInt32LE(24), n = (wav.length - 44) / 2, win = Math.round(rate / 100), out = [];
+    let quiet = 10;
+    for (let i = 0; i + win <= n; i += win) {
+        let m = 0;
+        for (let j = i; j < i + win; j++) m = Math.max(m, Math.abs(wav.readInt16LE(44 + j * 2)));
+        if (m > 3000) { if (quiet >= 10) out.push(i / rate); quiet = 0; } else quiet++;
+    }
+    return out;
+}
+
+/**
+ * Engine and start sounds of the game for a car class (the game's own files, used with
+ * the developer's permission). { engine: wav, start: wav, startGo: s, topSpeed } or null.
+ */
+async function getSounds(carClass) {
+    const dir = path.join(CACHE, 'classes', String(carClass).replace(/[^\w-]/g, '_'));
+    const { engine, topSpeed } = classSound(dir);
+    const n = engine || 6; // built-in classes have no info file: the Formula classes' engine
+    const sdir = path.join(CACHE, 'sounds');
+    const file = name => path.join(sdir, `${name}.wav`);
+    if (!fs.existsSync(file(`sound_engine_${n}`)) || !fs.existsSync(file('sound_start'))) {
+        const found = extractSounds(await gameData(), [`sound_engine_${n}`, 'sound_start']);
+        if (!found.size) return null;
+        fs.mkdirSync(sdir, { recursive: true });
+        for (const [name, wav] of found) fs.writeFileSync(file(name), shrinkWav(wav));
+    }
+    const start = fs.readFileSync(file('sound_start'));
+    const beeps = onsets(start);
+    // Leading silence trimmed; the long last tone is the "go".
+    const lead = Math.max(0, (beeps[0] ?? 0) - 0.05);
+    return {
+        engine: fs.readFileSync(file(`sound_engine_${n}`)),
+        engineNumber: n,
+        start: shrinkWav(start, lead),
+        startGo: beeps.length ? beeps[beeps.length - 1] - lead : null,
+        topSpeed
+    };
+}
+
+module.exports = { getTrack, getMinimap, getCarClass, getSounds, officialTracks, originalTracks };
